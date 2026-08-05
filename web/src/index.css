@@ -1,0 +1,72 @@
+/* --- RESET BAD DEFAULTS --- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  color: #111;
+  background: #000; /* map background */
+}
+
+/* --- MAP CONTAINER --- */
+.mapboxgl-map {
+  font-family: inherit;
+}
+
+/* --- UI PANELS (ALL OVERLAYS) --- */
+.ui-panel,
+.ui-panel * {
+  color: #111 !important;
+  background-color: transparent;
+}
+
+/* Equipment + BOM popups */
+.ui-panel {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+/* --- BUTTONS --- */
+button {
+  color: #111;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+/* --- INPUTS / SELECTS --- */
+input,
+select,
+option,
+textarea {
+  color: #111;
+  background: #fff;
+}
+
+/* --- TABLES --- */
+table,
+th,
+td {
+  color: #111;
+}
+
+/* --- HEADINGS --- */
+h1,
+h2,
+h3,
+h4,
+h5 {
+  color: #111;
+}
+
+/* --- REMOVE VITE DEMO STYLES --- */
+a {
+  color: #0066cc;
+  text-decoration: none;
+}
