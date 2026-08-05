@@ -173,6 +173,10 @@ function makeEquipmentMarkerEl(it) {
   shape.style.textShadow = "0 1px 2px rgba(0,0,0,0.5)";
   shape.style.pointerEvents = "auto";
   shape.style.boxSizing = "border-box";
+  // Sizes below are the "true to scale" size at EQUIP_REFERENCE_ZOOM; the
+  // render loop scales this element with map zoom so equipment shrinks/grows
+  // like a real object would, instead of staying pinned to a fixed screen size.
+  shape.style.transformOrigin = "center center";
 
   if (gp === "Gens") {
     shape.style.width = "36px";
@@ -237,8 +241,15 @@ function makeEquipmentMarkerEl(it) {
   root.addEventListener("mouseenter", () => (del.style.display = "flex"));
   root.addEventListener("mouseleave", () => (del.style.display = "none"));
 
-  return { root, del };
+  return { root, del, shape };
 }
+
+// Zoom level at which equipment renders at its designed pixel size (the map
+// opens at zoom 14). Scale doubles/halves per zoom level, same as real map
+// features, so equipment looks true-to-scale instead of pinned to one size.
+const EQUIP_REFERENCE_ZOOM = 14;
+const EQUIP_MIN_SCALE = 0.2;
+const EQUIP_MAX_SCALE = 4;
 
 export default function App() {
   const mapDivRef = useRef(null);
@@ -340,10 +351,15 @@ export default function App() {
     m.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
 
     const updateAllOverlayScreenPositions = () => {
+      const equipScale = Math.min(
+        EQUIP_MAX_SCALE,
+        Math.max(EQUIP_MIN_SCALE, Math.pow(2, m.getZoom() - EQUIP_REFERENCE_ZOOM))
+      );
       for (const node of equipNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
+        node.shape.style.transform = `scale(${equipScale})`;
       }
       for (const node of cableLabelNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
@@ -564,7 +580,7 @@ export default function App() {
       equipNodesRef.current.delete(id);
     }
 
-    const { root, del } = makeEquipmentMarkerEl(it);
+    const { root, del, shape } = makeEquipmentMarkerEl(it);
 
     const removePlaced = (rid) => {
       const node = equipNodesRef.current.get(rid);
@@ -623,11 +639,16 @@ export default function App() {
     });
 
     overlay.appendChild(root);
-    equipNodesRef.current.set(id, { el: root, it, lng, lat });
+    equipNodesRef.current.set(id, { el: root, shape, it, lng, lat });
 
     const p = m.project([lng, lat]);
     root.style.left = `${p.x}px`;
     root.style.top = `${p.y}px`;
+    const initialScale = Math.min(
+      EQUIP_MAX_SCALE,
+      Math.max(EQUIP_MIN_SCALE, Math.pow(2, m.getZoom() - EQUIP_REFERENCE_ZOOM))
+    );
+    shape.style.transform = `scale(${initialScale})`;
 
     setPlaced((prev) => {
       const exists = prev.some((x) => x.id === id);
