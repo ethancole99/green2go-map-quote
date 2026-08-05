@@ -251,13 +251,13 @@ export default function App() {
   // Cables
   const cableSourceId = "g2g-cables";
   const cableLayerId = "g2g-cables-layer";
-  const outletMarkersRef = useRef(new Map());
-  const quadCenterMarkersRef = useRef(new Map());
-  const cableLabelMarkersRef = useRef(new Map());
+  const cableOverlayRef = useRef(null);
+  const outletNodesRef = useRef(new Map());
+  const quadCenterNodesRef = useRef(new Map());
+  const cableLabelNodesRef = useRef(new Map());
 
   // State
   const [showHomePage, setShowHomePage] = useState(true);
-  const [map, setMap] = useState(null);
 
   const [catalog, setCatalog] = useState([]);
   const [billingTerm, setBillingTerm] = useState("day");
@@ -339,10 +339,23 @@ export default function App() {
 
     m.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
 
-    const updateAllEquipmentScreenPositions = () => {
-      const overlay = equipOverlayRef.current;
-      if (!overlay) return;
+    const updateAllOverlayScreenPositions = () => {
       for (const node of equipNodesRef.current.values()) {
+        const p = m.project([node.lng, node.lat]);
+        node.el.style.left = `${p.x}px`;
+        node.el.style.top = `${p.y}px`;
+      }
+      for (const node of cableLabelNodesRef.current.values()) {
+        const p = m.project([node.lng, node.lat]);
+        node.el.style.left = `${p.x}px`;
+        node.el.style.top = `${p.y}px`;
+      }
+      for (const node of quadCenterNodesRef.current.values()) {
+        const p = m.project([node.lng, node.lat]);
+        node.el.style.left = `${p.x}px`;
+        node.el.style.top = `${p.y}px`;
+      }
+      for (const node of outletNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
@@ -386,9 +399,23 @@ export default function App() {
         });
       }
 
-      // ✅ CRITICAL: attach equipment overlay to map.getContainer(), NOT canvasContainer
-      // The canvasContainer is what Mapbox scales during scroll-zoom animation.
+      // ✅ CRITICAL: attach overlays to map.getContainer(), NOT canvasContainer.
+      // The canvasContainer is what Mapbox scales during scroll-zoom animation
+      // (that's the "markers grow/shrink while zooming" bug) — mapboxgl.Marker
+      // elements live inside that scaled container, so both equipment AND cable
+      // markers (labels, quad handle, quad outlets) must live outside it here.
       const container = m.getContainer(); // not scaled during smooth zoom
+
+      const cableOverlay = document.createElement("div");
+      cableOverlay.style.position = "absolute";
+      cableOverlay.style.inset = "0";
+      cableOverlay.style.pointerEvents = "none";
+      cableOverlay.style.zIndex = "25";
+      cableOverlay.style.transform = "none";
+      cableOverlay.style.willChange = "auto";
+      container.appendChild(cableOverlay);
+      cableOverlayRef.current = cableOverlay;
+
       const overlay = document.createElement("div");
       overlay.style.position = "absolute";
       overlay.style.inset = "0";
@@ -399,14 +426,13 @@ export default function App() {
       container.appendChild(overlay);
       equipOverlayRef.current = overlay;
 
-      requestAnimationFrame(updateAllEquipmentScreenPositions);
+      requestAnimationFrame(updateAllOverlayScreenPositions);
     });
 
-    // Reposition equipment on any render tick (covers smooth zoom frames)
-    m.on("render", updateAllEquipmentScreenPositions);
+    // Reposition equipment + cable overlays on any render tick (covers smooth zoom frames)
+    m.on("render", updateAllOverlayScreenPositions);
 
     mapRef.current = m;
-    setMap(m);
 
     // keyboard rotate quickies
     m.keyboard.enable();
@@ -425,15 +451,17 @@ export default function App() {
       equipOverlayRef.current?.remove?.();
       equipOverlayRef.current = null;
 
-      // cable markers cleanup
-      for (const mk of outletMarkersRef.current.values()) mk.remove();
-      outletMarkersRef.current.clear();
-      for (const mk of quadCenterMarkersRef.current.values()) mk.remove();
-      quadCenterMarkersRef.current.clear();
-      for (const mk of cableLabelMarkersRef.current.values()) mk.remove();
-      cableLabelMarkersRef.current.clear();
+      // cable overlay cleanup
+      for (const node of outletNodesRef.current.values()) node.el.remove();
+      outletNodesRef.current.clear();
+      for (const node of quadCenterNodesRef.current.values()) node.el.remove();
+      quadCenterNodesRef.current.clear();
+      for (const node of cableLabelNodesRef.current.values()) node.el.remove();
+      cableLabelNodesRef.current.clear();
+      cableOverlayRef.current?.remove?.();
+      cableOverlayRef.current = null;
 
-      m.off("render", updateAllEquipmentScreenPositions);
+      m.off("render", updateAllOverlayScreenPositions);
 
       m.remove();
     };
@@ -734,16 +762,28 @@ export default function App() {
     if (!m) return;
     const src = m.getSource(cableSourceId);
     if (!src) return;
+    const overlay = cableOverlayRef.current;
+    if (!overlay) return;
 
     const features = [];
 
-    // clear old markers
-    for (const mk of outletMarkersRef.current.values()) mk.remove();
-    outletMarkersRef.current.clear();
-    for (const mk of quadCenterMarkersRef.current.values()) mk.remove();
-    quadCenterMarkersRef.current.clear();
-    for (const mk of cableLabelMarkersRef.current.values()) mk.remove();
-    cableLabelMarkersRef.current.clear();
+    // clear old nodes
+    for (const node of outletNodesRef.current.values()) node.el.remove();
+    outletNodesRef.current.clear();
+    for (const node of quadCenterNodesRef.current.values()) node.el.remove();
+    quadCenterNodesRef.current.clear();
+    for (const node of cableLabelNodesRef.current.values()) node.el.remove();
+    cableLabelNodesRef.current.clear();
+
+    // Places a DOM node on the cable overlay (outside Mapbox's scaled canvas
+    // container) and records it so the render-tick loop keeps it positioned.
+    const place = (el, lng, lat, nodeMap, key) => {
+      overlay.appendChild(el);
+      const p = m.project([lng, lat]);
+      el.style.left = `${p.x}px`;
+      el.style.top = `${p.y}px`;
+      nodeMap.set(key, { el, lng, lat });
+    };
 
     for (const c of cables) {
       features.push({
@@ -762,6 +802,9 @@ export default function App() {
       const midLat = (c.a.lat + c.b.lat) / 2;
 
       const labelEl = document.createElement("div");
+      labelEl.style.position = "absolute";
+      labelEl.style.transform = "translate(-50%, -50%)";
+      labelEl.style.pointerEvents = "none";
       labelEl.style.background = "rgba(255, 255, 255, 0.95)";
       labelEl.style.border = "2px solid #111";
       labelEl.style.borderRadius = "4px";
@@ -774,11 +817,7 @@ export default function App() {
       labelEl.textContent = `${Math.round(c.feet)}'`;
       labelEl.title = `${c.feet.toFixed(1)} feet`;
 
-      const labelMarker = new mapboxgl.Marker({ element: labelEl, anchor: "center" })
-        .setLngLat([midLng, midLat])
-        .addTo(m);
-
-      cableLabelMarkersRef.current.set(`${c.id}-label`, labelMarker);
+      place(labelEl, midLng, midLat, cableLabelNodesRef.current, `${c.id}-label`);
 
       if (c.type === "QUAD") {
         const centerLng = (c.a.lng + c.b.lng) / 2;
@@ -786,6 +825,9 @@ export default function App() {
         const rotation = c.rotation || 0;
 
         const centerEl = document.createElement("div");
+        centerEl.style.position = "absolute";
+        centerEl.style.transform = "translate(-50%, -50%)";
+        centerEl.style.pointerEvents = "auto";
         centerEl.style.width = "20px";
         centerEl.style.height = "20px";
         centerEl.style.background = "#6a1b9a";
@@ -801,61 +843,73 @@ export default function App() {
         centerEl.textContent = "Q";
         centerEl.title = "Drag to rotate | Shift+Drag to move";
 
-        let isRotating = false;
-        let rotateStartAngle = 0;
-
+        // No mapboxgl.Marker here (same reason as equipment): dragging is
+        // handled by hand via project()/unproject() so this node never rides
+        // Mapbox's scaled canvas container.
         centerEl.addEventListener("mousedown", (e) => {
+          e.preventDefault();
           e.stopPropagation();
-          if (e.shiftKey) return;
 
-          isRotating = true;
+          const isMove = e.shiftKey;
+          centerEl.style.cursor = isMove ? "grabbing" : "crosshair";
 
-          const rect = mapDivRef.current.getBoundingClientRect();
-          const bounds = m.getBounds();
-
-          const centerX =
-            rect.left +
-            ((centerLng - bounds.getWest()) / (bounds.getEast() - bounds.getWest())) * rect.width;
-          const centerY =
-            rect.top +
-            ((bounds.getNorth() - centerLat) / (bounds.getNorth() - bounds.getSouth())) * rect.height;
-
-          const dx = e.clientX - centerX;
-          const dy = e.clientY - centerY;
-          rotateStartAngle = Math.atan2(dy, dx) * (180 / Math.PI) - rotation;
-
-          centerEl.style.cursor = "crosshair";
+          const rect0 = mapDivRef.current.getBoundingClientRect();
+          const startCenterPx = m.project([centerLng, centerLat]);
+          const startAngle =
+            Math.atan2(
+              e.clientY - (rect0.top + startCenterPx.y),
+              e.clientX - (rect0.left + startCenterPx.x)
+            ) *
+            (180 / Math.PI);
+          const rotateStartAngle = startAngle - rotation;
 
           const onMouseMove = (moveEvent) => {
-            if (!isRotating) return;
+            const rect = mapDivRef.current.getBoundingClientRect();
 
-            const mdx = moveEvent.clientX - centerX;
-            const mdy = moveEvent.clientY - centerY;
-            const currentAngle = Math.atan2(mdy, mdx) * (180 / Math.PI);
-            const newRotation = currentAngle - rotateStartAngle;
+            if (isMove) {
+              const x = moveEvent.clientX - rect.left;
+              const y = moveEvent.clientY - rect.top;
+              const ll = m.unproject([x, y]);
+              const offsetLng = 0.00015;
+              const radians = (rotation * Math.PI) / 180;
+              const dx = (offsetLng / 2) * Math.cos(radians);
+              const dy = (offsetLng / 2) * Math.sin(radians);
 
-            const offsetLng = 0.00015;
-            const radians = (newRotation * Math.PI) / 180;
-            const dx2 = (offsetLng / 2) * Math.cos(radians);
-            const dy2 = (offsetLng / 2) * Math.sin(radians);
+              setCables((prev) =>
+                prev.map((cable) =>
+                  cable.id === c.id
+                    ? { ...cable, a: { lng: ll.lng - dx, lat: ll.lat - dy }, b: { lng: ll.lng + dx, lat: ll.lat + dy } }
+                    : cable
+                )
+              );
+            } else {
+              const centerPx = m.project([centerLng, centerLat]);
+              const cx = rect.left + centerPx.x;
+              const cy = rect.top + centerPx.y;
+              const currentAngle = Math.atan2(moveEvent.clientY - cy, moveEvent.clientX - cx) * (180 / Math.PI);
+              const newRotation = currentAngle - rotateStartAngle;
 
-            setCables((prev) =>
-              prev.map((cable) => {
-                if (cable.id === c.id) {
-                  return {
-                    ...cable,
-                    a: { lng: centerLng - dx2, lat: centerLat - dy2 },
-                    b: { lng: centerLng + dx2, lat: centerLat + dy2 },
-                    rotation: newRotation,
-                  };
-                }
-                return cable;
-              })
-            );
+              const offsetLng = 0.00015;
+              const radians = (newRotation * Math.PI) / 180;
+              const dx = (offsetLng / 2) * Math.cos(radians);
+              const dy = (offsetLng / 2) * Math.sin(radians);
+
+              setCables((prev) =>
+                prev.map((cable) =>
+                  cable.id === c.id
+                    ? {
+                        ...cable,
+                        a: { lng: centerLng - dx, lat: centerLat - dy },
+                        b: { lng: centerLng + dx, lat: centerLat + dy },
+                        rotation: newRotation,
+                      }
+                    : cable
+                )
+              );
+            }
           };
 
           const onMouseUp = () => {
-            isRotating = false;
             centerEl.style.cursor = "grab";
             document.removeEventListener("mousemove", onMouseMove);
             document.removeEventListener("mouseup", onMouseUp);
@@ -865,36 +919,7 @@ export default function App() {
           document.addEventListener("mouseup", onMouseUp);
         });
 
-        const centerMarker = new mapboxgl.Marker({
-          element: centerEl,
-          draggable: true,
-          anchor: "center",
-        })
-          .setLngLat([centerLng, centerLat])
-          .addTo(m);
-
-        centerMarker.on("dragend", () => {
-          const newCenter = centerMarker.getLngLat();
-          const offsetLng = 0.00015;
-          const radians = (rotation * Math.PI) / 180;
-          const dx = (offsetLng / 2) * Math.cos(radians);
-          const dy = (offsetLng / 2) * Math.sin(radians);
-
-          setCables((prev) =>
-            prev.map((cable) => {
-              if (cable.id === c.id) {
-                return {
-                  ...cable,
-                  a: { lng: newCenter.lng - dx, lat: newCenter.lat - dy },
-                  b: { lng: newCenter.lng + dx, lat: newCenter.lat + dy },
-                };
-              }
-              return cable;
-            })
-          );
-        });
-
-        quadCenterMarkersRef.current.set(c.id, centerMarker);
+        place(centerEl, centerLng, centerLat, quadCenterNodesRef.current, c.id);
 
         for (let outlet = 1; outlet <= 3; outlet++) {
           const progress = outlet / 4;
@@ -902,6 +927,9 @@ export default function App() {
           const lat = c.a.lat + (c.b.lat - c.a.lat) * progress;
 
           const outletEl = document.createElement("div");
+          outletEl.style.position = "absolute";
+          outletEl.style.transform = "translate(-50%, -50%)";
+          outletEl.style.pointerEvents = "none";
           outletEl.style.width = "12px";
           outletEl.style.height = "12px";
           outletEl.style.background = "#fff";
@@ -910,11 +938,7 @@ export default function App() {
           outletEl.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
           outletEl.title = `Quad Outlet ${outlet}`;
 
-          const outletMarker = new mapboxgl.Marker({ element: outletEl, anchor: "center" })
-            .setLngLat([lng, lat])
-            .addTo(m);
-
-          outletMarkersRef.current.set(`${c.id}-outlet-${outlet}`, outletMarker);
+          place(outletEl, lng, lat, outletNodesRef.current, `${c.id}-outlet-${outlet}`);
         }
       }
     }
@@ -1120,12 +1144,12 @@ export default function App() {
         setPlaced([]);
 
         // Clear cables
-        for (const mk of outletMarkersRef.current.values()) mk.remove();
-        outletMarkersRef.current.clear();
-        for (const mk of quadCenterMarkersRef.current.values()) mk.remove();
-        quadCenterMarkersRef.current.clear();
-        for (const mk of cableLabelMarkersRef.current.values()) mk.remove();
-        cableLabelMarkersRef.current.clear();
+        for (const node of outletNodesRef.current.values()) node.el.remove();
+        outletNodesRef.current.clear();
+        for (const node of quadCenterNodesRef.current.values()) node.el.remove();
+        quadCenterNodesRef.current.clear();
+        for (const node of cableLabelNodesRef.current.values()) node.el.remove();
+        cableLabelNodesRef.current.clear();
         setCables([]);
 
         const m = mapRef.current;
@@ -1267,7 +1291,9 @@ export default function App() {
         if (layer.id !== "custom-map-overlay-layer" && layer.id !== cableLayerId && !layer.id.startsWith("custom-")) {
           try {
             m.setLayoutProperty(layer.id, "visibility", "none");
-          } catch {}
+          } catch {
+            // some base style layers (e.g. background) don't support visibility toggling
+          }
         }
       });
 
@@ -1290,14 +1316,18 @@ export default function App() {
       if (layer.id !== cableLayerId && !layer.id.startsWith("custom-")) {
         try {
           m.setLayoutProperty(layer.id, "visibility", "visible");
-        } catch {}
+        } catch {
+          // some base style layers (e.g. background) don't support visibility toggling
+        }
       }
     });
 
     if (customMapImage) {
       try {
         URL.revokeObjectURL(customMapImage);
-      } catch {}
+      } catch {
+        // customMapImage may not be a blob: URL (e.g. loaded from a saved project)
+      }
     }
 
     setCustomMapImage(null);
