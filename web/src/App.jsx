@@ -1921,34 +1921,6 @@ export default function App() {
           </select>
         </div>
 
-        <div
-          style={{
-            ...uiPanelStyle,
-            padding: "8px 10px",
-            borderRadius: 12,
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 900 }}>Equipment Size:</div>
-          <button
-            onClick={() => setEquipSizeAdjust((v) => Math.max(0.3, Math.round((v - 0.1) * 10) / 10))}
-            style={{ ...lightBtn, padding: "2px 10px", fontSize: 14, lineHeight: 1 }}
-          >
-            −
-          </button>
-          <div style={{ fontSize: 12, fontWeight: 900, minWidth: 36, textAlign: "center" }}>
-            {Math.round(equipSizeAdjust * 100)}%
-          </div>
-          <button
-            onClick={() => setEquipSizeAdjust((v) => Math.min(3, Math.round((v + 0.1) * 10) / 10))}
-            style={{ ...lightBtn, padding: "2px 10px", fontSize: 14, lineHeight: 1 }}
-          >
-            +
-          </button>
-        </div>
-
         <div style={{ ...uiPanelStyle, padding: "6px 10px", borderRadius: 12, fontSize: 11, fontWeight: 900, opacity: 0.85 }}>
           💡 Shift+Drag to move equipment | Ctrl+Shift+Right Click cable to delete
         </div>
@@ -2035,6 +2007,25 @@ export default function App() {
                 <option value="month">Monthly</option>
               </select>
               <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.75, fontWeight: 900 }}>Loaded: {catalog.length}</div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75, fontWeight: 900 }}>Size:</div>
+              <button
+                onClick={() => setEquipSizeAdjust((v) => Math.max(0.3, Math.round((v - 0.1) * 10) / 10))}
+                style={{ ...lightBtn, padding: "2px 10px", fontSize: 14, lineHeight: 1 }}
+              >
+                −
+              </button>
+              <div style={{ fontSize: 12, fontWeight: 900, minWidth: 36, textAlign: "center" }}>
+                {Math.round(equipSizeAdjust * 100)}%
+              </div>
+              <button
+                onClick={() => setEquipSizeAdjust((v) => Math.min(3, Math.round((v + 0.1) * 10) / 10))}
+                style={{ ...lightBtn, padding: "2px 10px", fontSize: 14, lineHeight: 1 }}
+              >
+                +
+              </button>
             </div>
 
             {groups.length === 0 ? (
