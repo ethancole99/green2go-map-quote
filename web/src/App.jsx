@@ -272,13 +272,17 @@ function equipRealMeters(gp) {
 const EQUIP_MIN_SCALE = 0.05;
 const EQUIP_MAX_SCALE = 6;
 // True-to-scale math can shrink an icon well below what's actually usable
-// at normal working zoom - never render smaller than this, even if the
-// geometrically "correct" size would be tinier. Still shrinks naturally
-// with zoom above this floor, and still grows accurately zooming in.
-const EQUIP_MIN_VISIBLE_PX = 20;
+// at normal working zoom - never render smaller than this floor, even if
+// the geometrically "correct" size would be tinier. Still shrinks naturally
+// with zoom above the floor, and still grows accurately zooming in. Gens/AC
+// need a bigger floor than Distro to stay readable.
+function equipMinVisiblePx(gp) {
+  if (gp === "Gens" || gp === "AC") return 40;
+  return 20;
+}
 
-function equipScaleForRealMeters(realMeters, mpp, baseWidthPx) {
-  const targetPx = Math.max(EQUIP_MIN_VISIBLE_PX, realMeters / mpp);
+function equipScaleForRealMeters(gp, realMeters, mpp, baseWidthPx) {
+  const targetPx = Math.max(equipMinVisiblePx(gp), realMeters / mpp);
   return Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, targetPx / baseWidthPx));
 }
 
@@ -399,7 +403,7 @@ export default function App() {
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
         const equipScale = useRealScale
-          ? equipScaleForRealMeters(node.realMeters, mpp, node.baseWidthPx)
+          ? equipScaleForRealMeters(node.it?.gp, node.realMeters, mpp, node.baseWidthPx)
           : EQUIP_SIZE_MULTIPLIER;
         node.shape.style.transform = `scale(${equipScale})`;
       }
@@ -689,7 +693,7 @@ export default function App() {
     root.style.top = `${p.y}px`;
     const initialScale = customMapModeRef.current
       ? EQUIP_SIZE_MULTIPLIER
-      : equipScaleForRealMeters(realMeters, metersPerPixel(lat, m.getZoom()), baseWidthPx);
+      : equipScaleForRealMeters(it?.gp, realMeters, metersPerPixel(lat, m.getZoom()), baseWidthPx);
     shape.style.transform = `scale(${initialScale})`;
 
     setPlaced((prev) => {
