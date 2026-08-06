@@ -261,11 +261,10 @@ function makeEquipmentMarkerEl(it) {
 // the ground - roughly a parking-space-sized pad for the larger gear, a bit
 // less for smaller items. This is what equipment size is actually scaled
 // against (via metersPerPixel), not an arbitrary on-screen pixel guess.
+const EQUIP_SIZE_MULTIPLIER = 1.15;
 function equipRealMeters(gp) {
-  if (gp === "Gens") return 3;
-  if (gp === "AC") return 2.5;
-  if (gp === "Distro") return 1.5;
-  return 1.5;
+  const base = gp === "Gens" ? 3 : gp === "AC" ? 2.5 : gp === "Distro" ? 1.5 : 1.5;
+  return base * EQUIP_SIZE_MULTIPLIER;
 }
 
 // Safety bounds only - the real scale comes from metersPerPixel(). These
