@@ -34,6 +34,13 @@ function haversineMeters(a, b) {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
+// Ground distance (meters) represented by one screen pixel at a given
+// latitude/zoom - standard Web Mercator resolution formula, same math
+// Mapbox itself uses to render tiles at true scale.
+function metersPerPixel(lat, zoom) {
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
+}
+
 // Pixel-based feet for “custom map” overlay mode
 function customMapDistance(a, b, mapInstance) {
   if (!mapInstance) return 0;
@@ -173,12 +180,15 @@ function makeEquipmentMarkerEl(it) {
   shape.style.textShadow = "0 1px 2px rgba(0,0,0,0.5)";
   shape.style.pointerEvents = "auto";
   shape.style.boxSizing = "border-box";
-  // Sizes below are the "true to scale" size at EQUIP_REFERENCE_ZOOM; the
-  // render loop scales this element with map zoom so equipment shrinks/grows
-  // like a real object would, instead of staying pinned to a fixed screen size.
+  // Width/height below are the icon's size *before* real-world scaling is
+  // applied by the render loop (see EQUIP_REAL_METERS / metersPerPixel) -
+  // baseWidthPx records that starting size so the scale factor can be
+  // computed relative to it.
   shape.style.transformOrigin = "center center";
 
+  let baseWidthPx;
   if (gp === "Gens") {
+    baseWidthPx = 36;
     shape.style.width = "36px";
     shape.style.height = "36px";
     shape.style.background = "#00c853";
@@ -186,6 +196,7 @@ function makeEquipmentMarkerEl(it) {
     shape.style.fontSize = "9px";
     shape.textContent = size ? `${size}kW` : "G";
   } else if (gp === "AC") {
+    baseWidthPx = 36;
     shape.style.width = "36px";
     shape.style.height = "32px";
     shape.style.background = "#2196f3";
@@ -195,6 +206,7 @@ function makeEquipmentMarkerEl(it) {
     shape.textContent = size ? `${size}T` : "AC";
     shape.style.paddingTop = "12px";
   } else if (gp === "Distro") {
+    baseWidthPx = 30;
     shape.style.width = "30px";
     shape.style.height = "30px";
     shape.style.background = "#ffd600";
@@ -204,6 +216,7 @@ function makeEquipmentMarkerEl(it) {
     shape.style.fontSize = "8px";
     shape.textContent = size || "D";
   } else {
+    baseWidthPx = 22;
     shape.style.width = "22px";
     shape.style.height = "22px";
     shape.style.borderRadius = "50%";
@@ -241,18 +254,24 @@ function makeEquipmentMarkerEl(it) {
   root.addEventListener("mouseenter", () => (del.style.display = "flex"));
   root.addEventListener("mouseleave", () => (del.style.display = "none"));
 
-  return { root, del, shape };
+  return { root, del, shape, baseWidthPx };
 }
 
-// Zoom level at which equipment renders at its designed pixel size (the map
-// opens at zoom 14). Scale doubles/halves per zoom level, same as real map
-// features, so equipment looks true-to-scale instead of pinned to one size.
-// Icons never render larger than their original design size (the size that
-// was always fine) - only smaller as you zoom out. EQUIP_REFERENCE_ZOOM is
-// the zoom at/above which icons sit at that full original size.
-const EQUIP_REFERENCE_ZOOM = 19;
-const EQUIP_MIN_SCALE = 0.1;
-const EQUIP_MAX_SCALE = 1;
+// Approximate real-world footprint (meters) each equipment type occupies on
+// the ground - roughly a parking-space-sized pad for the larger gear, a bit
+// less for smaller items. This is what equipment size is actually scaled
+// against (via metersPerPixel), not an arbitrary on-screen pixel guess.
+function equipRealMeters(gp) {
+  if (gp === "Gens") return 3;
+  if (gp === "AC") return 2.5;
+  if (gp === "Distro") return 1.5;
+  return 1.5;
+}
+
+// Safety bounds only - the real scale comes from metersPerPixel(). These
+// just stop an icon from vanishing or covering the screen at extreme zoom.
+const EQUIP_MIN_SCALE = 0.05;
+const EQUIP_MAX_SCALE = 6;
 
 export default function App() {
   const mapDivRef = useRef(null);
@@ -354,14 +373,13 @@ export default function App() {
     m.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
 
     const updateAllOverlayScreenPositions = () => {
-      const equipScale = Math.min(
-        EQUIP_MAX_SCALE,
-        Math.max(EQUIP_MIN_SCALE, Math.pow(2, m.getZoom() - EQUIP_REFERENCE_ZOOM))
-      );
+      const mpp = metersPerPixel(m.getCenter().lat, m.getZoom());
       for (const node of equipNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
+        const targetPx = node.realMeters / mpp;
+        const equipScale = Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, targetPx / node.baseWidthPx));
         node.shape.style.transform = `scale(${equipScale})`;
       }
       for (const node of cableLabelNodesRef.current.values()) {
@@ -583,7 +601,8 @@ export default function App() {
       equipNodesRef.current.delete(id);
     }
 
-    const { root, del, shape } = makeEquipmentMarkerEl(it);
+    const { root, del, shape, baseWidthPx } = makeEquipmentMarkerEl(it);
+    const realMeters = equipRealMeters(it?.gp || "");
 
     const removePlaced = (rid) => {
       const node = equipNodesRef.current.get(rid);
@@ -642,15 +661,13 @@ export default function App() {
     });
 
     overlay.appendChild(root);
-    equipNodesRef.current.set(id, { el: root, shape, it, lng, lat });
+    equipNodesRef.current.set(id, { el: root, shape, baseWidthPx, realMeters, it, lng, lat });
 
     const p = m.project([lng, lat]);
     root.style.left = `${p.x}px`;
     root.style.top = `${p.y}px`;
-    const initialScale = Math.min(
-      EQUIP_MAX_SCALE,
-      Math.max(EQUIP_MIN_SCALE, Math.pow(2, m.getZoom() - EQUIP_REFERENCE_ZOOM))
-    );
+    const mpp = metersPerPixel(lat, m.getZoom());
+    const initialScale = Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, realMeters / mpp / baseWidthPx));
     shape.style.transform = `scale(${initialScale})`;
 
     setPlaced((prev) => {
