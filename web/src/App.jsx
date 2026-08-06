@@ -279,6 +279,9 @@ export default function App() {
   // Equipment overlay + nodes
   const equipOverlayRef = useRef(null);
   const equipNodesRef = useRef(new Map()); // id -> { el, it, lng, lat }
+  // Read inside the map-init effect (which only runs once, on [showHomePage])
+  // so it sees the latest customMapMode without needing to reinit the map.
+  const customMapModeRef = useRef(false);
 
   // Cables
   const cableSourceId = "g2g-cables";
@@ -312,6 +315,9 @@ export default function App() {
   const [customMapImage, setCustomMapImage] = useState(null);
   const [customMapBounds, setCustomMapBounds] = useState(null);
   const [customMapMode, setCustomMapMode] = useState(false);
+  useEffect(() => {
+    customMapModeRef.current = customMapMode;
+  }, [customMapMode]);
 
   const uiPanelStyle = {
     background: "rgba(255,255,255,0.94)",
@@ -372,13 +378,19 @@ export default function App() {
     m.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
 
     const updateAllOverlayScreenPositions = () => {
-      const mpp = metersPerPixel(m.getCenter().lat, m.getZoom());
+      // Uploaded PDF/image maps are draped over made-up lng/lat bounds, not
+      // real geography, so ground-resolution math is meaningless there -
+      // fall back to a fixed on-screen size, same idea as the fixed
+      // pixelsPerFoot calibration cable lengths already use in this mode.
+      const useRealScale = !customMapModeRef.current;
+      const mpp = useRealScale ? metersPerPixel(m.getCenter().lat, m.getZoom()) : null;
       for (const node of equipNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
-        const targetPx = node.realMeters / mpp;
-        const equipScale = Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, targetPx / node.baseWidthPx));
+        const equipScale = useRealScale
+          ? Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, node.realMeters / mpp / node.baseWidthPx))
+          : EQUIP_SIZE_MULTIPLIER;
         node.shape.style.transform = `scale(${equipScale})`;
       }
       for (const node of cableLabelNodesRef.current.values()) {
@@ -665,8 +677,9 @@ export default function App() {
     const p = m.project([lng, lat]);
     root.style.left = `${p.x}px`;
     root.style.top = `${p.y}px`;
-    const mpp = metersPerPixel(lat, m.getZoom());
-    const initialScale = Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, realMeters / mpp / baseWidthPx));
+    const initialScale = customMapModeRef.current
+      ? EQUIP_SIZE_MULTIPLIER
+      : Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, realMeters / metersPerPixel(lat, m.getZoom()) / baseWidthPx));
     shape.style.transform = `scale(${initialScale})`;
 
     setPlaced((prev) => {
