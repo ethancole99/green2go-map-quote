@@ -333,6 +333,22 @@ export default function App() {
     customMapModeRef.current = customMapMode;
   }, [customMapMode]);
 
+  // Manual equipment size adjustment (1 = 100%), on top of whatever the
+  // real-scale/floor math computes. User-controlled via +/- buttons since
+  // no single hardcoded value reads right for everyone.
+  const [equipSizeAdjust, setEquipSizeAdjust] = useState(() => {
+    const saved = Number(localStorage.getItem("g2g-equip-size-adjust"));
+    return saved > 0 ? saved : 1;
+  });
+  const equipSizeAdjustRef = useRef(equipSizeAdjust);
+  useEffect(() => {
+    equipSizeAdjustRef.current = equipSizeAdjust;
+    localStorage.setItem("g2g-equip-size-adjust", String(equipSizeAdjust));
+    // Force a repaint so already-placed equipment picks up the new size
+    // immediately, not just the next time the map itself moves.
+    mapRef.current?.triggerRepaint();
+  }, [equipSizeAdjust]);
+
   const uiPanelStyle = {
     background: "rgba(255,255,255,0.94)",
     border: "1px solid rgba(0,0,0,0.15)",
@@ -402,10 +418,10 @@ export default function App() {
         const p = m.project([node.lng, node.lat]);
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
-        const equipScale = useRealScale
+        const baseScale = useRealScale
           ? equipScaleForRealMeters(node.it?.gp, node.realMeters, mpp, node.baseWidthPx)
           : EQUIP_SIZE_MULTIPLIER;
-        node.shape.style.transform = `scale(${equipScale})`;
+        node.shape.style.transform = `scale(${baseScale * equipSizeAdjustRef.current})`;
       }
       for (const node of cableLabelNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
@@ -691,10 +707,10 @@ export default function App() {
     const p = m.project([lng, lat]);
     root.style.left = `${p.x}px`;
     root.style.top = `${p.y}px`;
-    const initialScale = customMapModeRef.current
+    const baseInitialScale = customMapModeRef.current
       ? EQUIP_SIZE_MULTIPLIER
       : equipScaleForRealMeters(it?.gp, realMeters, metersPerPixel(lat, m.getZoom()), baseWidthPx);
-    shape.style.transform = `scale(${initialScale})`;
+    shape.style.transform = `scale(${baseInitialScale * equipSizeAdjustRef.current})`;
 
     setPlaced((prev) => {
       const exists = prev.some((x) => x.id === id);
@@ -1903,6 +1919,34 @@ export default function App() {
             <option value="week">Weekly</option>
             <option value="month">Monthly</option>
           </select>
+        </div>
+
+        <div
+          style={{
+            ...uiPanelStyle,
+            padding: "8px 10px",
+            borderRadius: 12,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 900 }}>Equipment Size:</div>
+          <button
+            onClick={() => setEquipSizeAdjust((v) => Math.max(0.3, Math.round((v - 0.1) * 10) / 10))}
+            style={{ ...lightBtn, padding: "2px 10px", fontSize: 14, lineHeight: 1 }}
+          >
+            −
+          </button>
+          <div style={{ fontSize: 12, fontWeight: 900, minWidth: 36, textAlign: "center" }}>
+            {Math.round(equipSizeAdjust * 100)}%
+          </div>
+          <button
+            onClick={() => setEquipSizeAdjust((v) => Math.min(3, Math.round((v + 0.1) * 10) / 10))}
+            style={{ ...lightBtn, padding: "2px 10px", fontSize: 14, lineHeight: 1 }}
+          >
+            +
+          </button>
         </div>
 
         <div style={{ ...uiPanelStyle, padding: "6px 10px", borderRadius: 12, fontSize: 11, fontWeight: 900, opacity: 0.85 }}>
