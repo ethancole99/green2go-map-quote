@@ -247,9 +247,9 @@ function makeEquipmentMarkerEl(it) {
 // Zoom level at which equipment renders at its designed pixel size (the map
 // opens at zoom 14). Scale doubles/halves per zoom level, same as real map
 // features, so equipment looks true-to-scale instead of pinned to one size.
-const EQUIP_REFERENCE_ZOOM = 14;
-const EQUIP_MIN_SCALE = 0.2;
-const EQUIP_MAX_SCALE = 4;
+const EQUIP_REFERENCE_ZOOM = 17;
+const EQUIP_MIN_SCALE = 0.15;
+const EQUIP_MAX_SCALE = 1.5;
 
 export default function App() {
   const mapDivRef = useRef(null);
