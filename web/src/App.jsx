@@ -487,7 +487,7 @@ export default function App() {
   // Catalog CSV load
   // ────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    fetch("/data/catalog.csv")
+    fetch(`${import.meta.env.BASE_URL}data/catalog.csv`)
       .then((r) => {
         if (!r.ok) throw new Error(`catalog.csv HTTP ${r.status}`);
         return r.text();
