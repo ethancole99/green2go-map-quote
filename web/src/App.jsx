@@ -1081,7 +1081,11 @@ export default function App() {
     for (const run of cables) {
       const combo = best50_100(run.feet);
 
-      const is50ftOnly = run.type === "FOUR_O" || run.type === "QUAD" || run.type === "50A";
+      // Cable types that are only stocked in 50ft lengths - a 100ft run means
+      // pricing two 50ft cables (doubled), not a real 100ft catalog item.
+      // 30A and 50A are genuinely stocked in both lengths with their own
+      // 100ft pricing, so they use the real catalog lookup below instead.
+      const is50ftOnly = run.type === "FOUR_O" || run.type === "QUAD" || run.type === "BANDED";
 
       let segments;
       if (is50ftOnly) {

@@ -23,10 +23,10 @@ Gens,80kW Diesel,450.0,900.0,2700.0
 Gens,95kW Diesel,500.0,1000.0,3000.0
 Gens,125kW Diesel,600.0,1200.0,3600.0
 Gens,250kW Diesel,1066.0,3200.0,9600.0
-Cable,Banded 2/5 50ft,37.5,75.0,225.0
-Cable,Banded 2/5 100ft,75.0,150.0,450.0
+Cable,Banded 2/0 50ft,38.0,75.0,225.0
 Cable,4/0 Feeder 50ft,14.0,28.0,84.0
 Cable,50A Spider Box Cable 50ft,15.0,30.0,90.0
+Cable,50A Spider Box Cable 100ft,30.0,60.0,180.0
 Cable,Quad Stringer 50ft,30.0,60.0,180.0
 Cable,30A Extension 50ft,25.0,50.0,150.0
-Cable,30A Extension 100ft,37.5,75.0,225.0
+Cable,30A Extension 100ft,38.0,75.0,225.0
