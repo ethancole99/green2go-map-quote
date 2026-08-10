@@ -549,7 +549,10 @@ export default function App() {
   // Catalog CSV load
   // ────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}data/catalog.csv`)
+    // Cache-bust: unlike the hashed JS/CSS bundles, this is a plain static
+    // file at a fixed URL, so nothing forces a CDN or browser to treat an
+    // updated catalog as different from the cached one without this.
+    fetch(`${import.meta.env.BASE_URL}data/catalog.csv?t=${Date.now()}`)
       .then((r) => {
         if (!r.ok) throw new Error(`catalog.csv HTTP ${r.status}`);
         return r.text();
