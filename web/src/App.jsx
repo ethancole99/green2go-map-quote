@@ -74,6 +74,14 @@ function is50ftOnlyCableType(type) {
   return type === "FOUR_O" || type === "QUAD" || type === "BANDED";
 }
 
+// Cable ramps are a fixed-size physical item, not a length of cable - always
+// exactly 36 inches (3ft) long, one flat-rate unit per placement.
+const RAMP_FEET = 3;
+
+function metersToLngDegrees(meters, lat) {
+  return meters / (111320 * Math.cos((lat * Math.PI) / 180));
+}
+
 function norm(s) {
   return String(s || "")
     .toLowerCase()
@@ -308,7 +316,7 @@ export default function App() {
   const cableLayerId = "g2g-cables-layer";
   const cableOverlayRef = useRef(null);
   const outletNodesRef = useRef(new Map());
-  const quadCenterNodesRef = useRef(new Map());
+  const lineCenterNodesRef = useRef(new Map());
   const cableLabelNodesRef = useRef(new Map());
 
   // State
@@ -434,7 +442,7 @@ export default function App() {
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
       }
-      for (const node of quadCenterNodesRef.current.values()) {
+      for (const node of lineCenterNodesRef.current.values()) {
         const p = m.project([node.lng, node.lat]);
         node.el.style.left = `${p.x}px`;
         node.el.style.top = `${p.y}px`;
@@ -461,7 +469,7 @@ export default function App() {
           type: "line",
           source: cableSourceId,
           paint: {
-            "line-width": 4,
+            "line-width": ["match", ["get", "type"], "RAMP", 10, 4],
             "line-opacity": 0.9,
             "line-color": [
               "match",
@@ -476,6 +484,8 @@ export default function App() {
               "#d50000",
               "QUAD",
               "#6a1b9a",
+              "RAMP",
+              "#ff6f00",
               "#00c853",
             ],
           },
@@ -538,8 +548,8 @@ export default function App() {
       // cable overlay cleanup
       for (const node of outletNodesRef.current.values()) node.el.remove();
       outletNodesRef.current.clear();
-      for (const node of quadCenterNodesRef.current.values()) node.el.remove();
-      quadCenterNodesRef.current.clear();
+      for (const node of lineCenterNodesRef.current.values()) node.el.remove();
+      lineCenterNodesRef.current.clear();
       for (const node of cableLabelNodesRef.current.values()) node.el.remove();
       cableLabelNodesRef.current.clear();
       cableOverlayRef.current?.remove?.();
@@ -621,12 +631,12 @@ export default function App() {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Equipment groups (exclude Cable)
+  // Equipment groups (exclude Cable + Ramp - those are placed via the Cable Tool)
   // ────────────────────────────────────────────────────────────────────────────
   const groups = useMemo(() => {
     const m = new Map();
     for (const it of catalog) {
-      if (it.gp === "Cable") continue;
+      if (it.gp === "Cable" || it.gp === "Ramp") continue;
       if (!m.has(it.gp)) m.set(it.gp, []);
       m.get(it.gp).push(it);
     }
@@ -766,7 +776,7 @@ export default function App() {
 
     function onMouseMove(e) {
       if (tool !== "cable") return;
-      if (cableType === "QUAD") return;
+      if (cableType === "QUAD" || cableType === "RAMP") return;
       if (!cableDraftStart) return;
       setCableDraftEnd({ lng: e.lngLat.lng, lat: e.lngLat.lat });
     }
@@ -796,6 +806,29 @@ export default function App() {
         }
 
         setCables((prev) => [...prev, { id, type: cableType, a, b, feet: 50, rotation: 0 }]);
+        return;
+      }
+
+      if (cableType === "RAMP") {
+        const id = crypto.randomUUID();
+
+        let a, b;
+        if (customMapMode && m) {
+          const pixelsForRamp = RAMP_FEET * 3.5;
+          const centerPixel = m.project([p.lng, p.lat]);
+          const leftPixel = { x: centerPixel.x - pixelsForRamp / 2, y: centerPixel.y };
+          const rightPixel = { x: centerPixel.x + pixelsForRamp / 2, y: centerPixel.y };
+          const leftCoord = m.unproject(leftPixel);
+          const rightCoord = m.unproject(rightPixel);
+          a = { lng: leftCoord.lng, lat: leftCoord.lat };
+          b = { lng: rightCoord.lng, lat: rightCoord.lat };
+        } else {
+          const degLng = metersToLngDegrees(RAMP_FEET * 0.3048, p.lat);
+          a = { lng: p.lng - degLng / 2, lat: p.lat };
+          b = { lng: p.lng + degLng / 2, lat: p.lat };
+        }
+
+        setCables((prev) => [...prev, { id, type: cableType, a, b, feet: RAMP_FEET, rotation: 0 }]);
         return;
       }
 
@@ -862,8 +895,8 @@ export default function App() {
     // clear old nodes
     for (const node of outletNodesRef.current.values()) node.el.remove();
     outletNodesRef.current.clear();
-    for (const node of quadCenterNodesRef.current.values()) node.el.remove();
-    quadCenterNodesRef.current.clear();
+    for (const node of lineCenterNodesRef.current.values()) node.el.remove();
+    lineCenterNodesRef.current.clear();
     for (const node of cableLabelNodesRef.current.values()) node.el.remove();
     cableLabelNodesRef.current.clear();
 
@@ -875,6 +908,107 @@ export default function App() {
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
       nodeMap.set(key, { el, lng, lat });
+    };
+
+    // Shared drag-to-rotate / shift+drag-to-move handle for fixed-length
+    // linear items (Quad, Ramp) that pivot around their own center point.
+    // offsetLng is half the item's on-map longitude span, held constant
+    // across the drag so the item keeps its true length while it rotates.
+    const makeRotatableCenterHandle = ({ cableId, label, color, centerLng, centerLat, rotation, offsetLng }) => {
+      const centerEl = document.createElement("div");
+      centerEl.style.position = "absolute";
+      centerEl.style.transform = "translate(-50%, -50%)";
+      centerEl.style.pointerEvents = "auto";
+      centerEl.style.width = "20px";
+      centerEl.style.height = "20px";
+      centerEl.style.background = color;
+      centerEl.style.border = "2px solid #fff";
+      centerEl.style.borderRadius = "50%";
+      centerEl.style.boxShadow = "0 2px 8px rgba(0,0,0,0.5)";
+      centerEl.style.cursor = "grab";
+      centerEl.style.display = "grid";
+      centerEl.style.placeItems = "center";
+      centerEl.style.color = "#fff";
+      centerEl.style.fontSize = "8px";
+      centerEl.style.fontWeight = "900";
+      centerEl.textContent = label;
+      centerEl.title = "Drag to rotate | Shift+Drag to move";
+
+      // No mapboxgl.Marker here (same reason as equipment): dragging is
+      // handled by hand via project()/unproject() so this node never rides
+      // Mapbox's scaled canvas container.
+      centerEl.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const isMove = e.shiftKey;
+        centerEl.style.cursor = isMove ? "grabbing" : "crosshair";
+
+        const rect0 = mapDivRef.current.getBoundingClientRect();
+        const startCenterPx = m.project([centerLng, centerLat]);
+        const startAngle =
+          Math.atan2(
+            e.clientY - (rect0.top + startCenterPx.y),
+            e.clientX - (rect0.left + startCenterPx.x)
+          ) *
+          (180 / Math.PI);
+        const rotateStartAngle = startAngle - rotation;
+
+        const onMouseMove = (moveEvent) => {
+          const rect = mapDivRef.current.getBoundingClientRect();
+
+          if (isMove) {
+            const x = moveEvent.clientX - rect.left;
+            const y = moveEvent.clientY - rect.top;
+            const ll = m.unproject([x, y]);
+            const radians = (rotation * Math.PI) / 180;
+            const dx = (offsetLng / 2) * Math.cos(radians);
+            const dy = (offsetLng / 2) * Math.sin(radians);
+
+            setCables((prev) =>
+              prev.map((cable) =>
+                cable.id === cableId
+                  ? { ...cable, a: { lng: ll.lng - dx, lat: ll.lat - dy }, b: { lng: ll.lng + dx, lat: ll.lat + dy } }
+                  : cable
+              )
+            );
+          } else {
+            const centerPx = m.project([centerLng, centerLat]);
+            const cx = rect.left + centerPx.x;
+            const cy = rect.top + centerPx.y;
+            const currentAngle = Math.atan2(moveEvent.clientY - cy, moveEvent.clientX - cx) * (180 / Math.PI);
+            const newRotation = currentAngle - rotateStartAngle;
+
+            const radians = (newRotation * Math.PI) / 180;
+            const dx = (offsetLng / 2) * Math.cos(radians);
+            const dy = (offsetLng / 2) * Math.sin(radians);
+
+            setCables((prev) =>
+              prev.map((cable) =>
+                cable.id === cableId
+                  ? {
+                      ...cable,
+                      a: { lng: centerLng - dx, lat: centerLat - dy },
+                      b: { lng: centerLng + dx, lat: centerLat + dy },
+                      rotation: newRotation,
+                    }
+                  : cable
+              )
+            );
+          }
+        };
+
+        const onMouseUp = () => {
+          centerEl.style.cursor = "grab";
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+        };
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+
+      return centerEl;
     };
 
     for (const c of cables) {
@@ -906,131 +1040,49 @@ export default function App() {
       labelEl.style.color = "#111";
       labelEl.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
       labelEl.style.whiteSpace = "nowrap";
-      labelEl.textContent = `${Math.round(c.feet)}'`;
+      labelEl.textContent = c.type === "RAMP" ? "Ramp" : `${Math.round(c.feet)}'`;
       labelEl.title = `${c.feet.toFixed(1)} feet`;
 
       place(labelEl, midLng, midLat, cableLabelNodesRef.current, `${c.id}-label`);
 
-      if (c.type === "QUAD") {
+      if (c.type === "QUAD" || c.type === "RAMP") {
         const centerLng = (c.a.lng + c.b.lng) / 2;
         const centerLat = (c.a.lat + c.b.lat) / 2;
         const rotation = c.rotation || 0;
+        const offsetLng = c.type === "QUAD" ? 0.00015 : metersToLngDegrees(RAMP_FEET * 0.3048, centerLat);
 
-        const centerEl = document.createElement("div");
-        centerEl.style.position = "absolute";
-        centerEl.style.transform = "translate(-50%, -50%)";
-        centerEl.style.pointerEvents = "auto";
-        centerEl.style.width = "20px";
-        centerEl.style.height = "20px";
-        centerEl.style.background = "#6a1b9a";
-        centerEl.style.border = "2px solid #fff";
-        centerEl.style.borderRadius = "50%";
-        centerEl.style.boxShadow = "0 2px 8px rgba(0,0,0,0.5)";
-        centerEl.style.cursor = "grab";
-        centerEl.style.display = "grid";
-        centerEl.style.placeItems = "center";
-        centerEl.style.color = "#fff";
-        centerEl.style.fontSize = "8px";
-        centerEl.style.fontWeight = "900";
-        centerEl.textContent = "Q";
-        centerEl.title = "Drag to rotate | Shift+Drag to move";
-
-        // No mapboxgl.Marker here (same reason as equipment): dragging is
-        // handled by hand via project()/unproject() so this node never rides
-        // Mapbox's scaled canvas container.
-        centerEl.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          const isMove = e.shiftKey;
-          centerEl.style.cursor = isMove ? "grabbing" : "crosshair";
-
-          const rect0 = mapDivRef.current.getBoundingClientRect();
-          const startCenterPx = m.project([centerLng, centerLat]);
-          const startAngle =
-            Math.atan2(
-              e.clientY - (rect0.top + startCenterPx.y),
-              e.clientX - (rect0.left + startCenterPx.x)
-            ) *
-            (180 / Math.PI);
-          const rotateStartAngle = startAngle - rotation;
-
-          const onMouseMove = (moveEvent) => {
-            const rect = mapDivRef.current.getBoundingClientRect();
-
-            if (isMove) {
-              const x = moveEvent.clientX - rect.left;
-              const y = moveEvent.clientY - rect.top;
-              const ll = m.unproject([x, y]);
-              const offsetLng = 0.00015;
-              const radians = (rotation * Math.PI) / 180;
-              const dx = (offsetLng / 2) * Math.cos(radians);
-              const dy = (offsetLng / 2) * Math.sin(radians);
-
-              setCables((prev) =>
-                prev.map((cable) =>
-                  cable.id === c.id
-                    ? { ...cable, a: { lng: ll.lng - dx, lat: ll.lat - dy }, b: { lng: ll.lng + dx, lat: ll.lat + dy } }
-                    : cable
-                )
-              );
-            } else {
-              const centerPx = m.project([centerLng, centerLat]);
-              const cx = rect.left + centerPx.x;
-              const cy = rect.top + centerPx.y;
-              const currentAngle = Math.atan2(moveEvent.clientY - cy, moveEvent.clientX - cx) * (180 / Math.PI);
-              const newRotation = currentAngle - rotateStartAngle;
-
-              const offsetLng = 0.00015;
-              const radians = (newRotation * Math.PI) / 180;
-              const dx = (offsetLng / 2) * Math.cos(radians);
-              const dy = (offsetLng / 2) * Math.sin(radians);
-
-              setCables((prev) =>
-                prev.map((cable) =>
-                  cable.id === c.id
-                    ? {
-                        ...cable,
-                        a: { lng: centerLng - dx, lat: centerLat - dy },
-                        b: { lng: centerLng + dx, lat: centerLat + dy },
-                        rotation: newRotation,
-                      }
-                    : cable
-                )
-              );
-            }
-          };
-
-          const onMouseUp = () => {
-            centerEl.style.cursor = "grab";
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
-          };
-
-          document.addEventListener("mousemove", onMouseMove);
-          document.addEventListener("mouseup", onMouseUp);
+        const centerEl = makeRotatableCenterHandle({
+          cableId: c.id,
+          label: c.type === "QUAD" ? "Q" : "R",
+          color: c.type === "QUAD" ? "#6a1b9a" : "#ff6f00",
+          centerLng,
+          centerLat,
+          rotation,
+          offsetLng,
         });
 
-        place(centerEl, centerLng, centerLat, quadCenterNodesRef.current, c.id);
+        place(centerEl, centerLng, centerLat, lineCenterNodesRef.current, c.id);
 
-        for (let outlet = 1; outlet <= 3; outlet++) {
-          const progress = outlet / 4;
-          const lng = c.a.lng + (c.b.lng - c.a.lng) * progress;
-          const lat = c.a.lat + (c.b.lat - c.a.lat) * progress;
+        if (c.type === "QUAD") {
+          for (let outlet = 1; outlet <= 3; outlet++) {
+            const progress = outlet / 4;
+            const lng = c.a.lng + (c.b.lng - c.a.lng) * progress;
+            const lat = c.a.lat + (c.b.lat - c.a.lat) * progress;
 
-          const outletEl = document.createElement("div");
-          outletEl.style.position = "absolute";
-          outletEl.style.transform = "translate(-50%, -50%)";
-          outletEl.style.pointerEvents = "none";
-          outletEl.style.width = "12px";
-          outletEl.style.height = "12px";
-          outletEl.style.background = "#fff";
-          outletEl.style.border = "2px solid #6a1b9a";
-          outletEl.style.borderRadius = "2px";
-          outletEl.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
-          outletEl.title = `Quad Outlet ${outlet}`;
+            const outletEl = document.createElement("div");
+            outletEl.style.position = "absolute";
+            outletEl.style.transform = "translate(-50%, -50%)";
+            outletEl.style.pointerEvents = "none";
+            outletEl.style.width = "12px";
+            outletEl.style.height = "12px";
+            outletEl.style.background = "#fff";
+            outletEl.style.border = "2px solid #6a1b9a";
+            outletEl.style.borderRadius = "2px";
+            outletEl.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
+            outletEl.title = `Quad Outlet ${outlet}`;
 
-          place(outletEl, lng, lat, outletNodesRef.current, `${c.id}-outlet-${outlet}`);
+            place(outletEl, lng, lat, outletNodesRef.current, `${c.id}-outlet-${outlet}`);
+          }
         }
       }
     }
@@ -1088,6 +1140,16 @@ export default function App() {
     const sample = new Map();
 
     for (const run of cables) {
+      if (run.type === "RAMP") {
+        const catalogItem = catalog.find((it) => it.gp === "Ramp") || null;
+        const name = catalogItem ? catalogItem.name : "Cable Ramp (NO CATALOG MATCH)";
+        const gp = "Ramp";
+        const k = `RAMP|${gp}::${name}`;
+        qty.set(k, (qty.get(k) || 0) + 1);
+        if (!sample.has(k)) sample.set(k, { gp, name, catalogItem, matched: !!catalogItem });
+        continue;
+      }
+
       const combo = best50_100(run.feet);
 
       const is50ftOnly = is50ftOnlyCableType(run.type);
@@ -1130,11 +1192,14 @@ export default function App() {
     }
     rows.sort((a, b) => (a.gp + a.name).localeCompare(b.gp + b.name));
     return rows;
-  }, [cables, billingTerm, cableIndex]);
+  }, [cables, billingTerm, cableIndex, catalog]);
 
   const cableTotal = cableBom.reduce((s, r) => s + r.subtotal, 0);
   const total = equipmentTotal + cableTotal;
-  const totalCableFeet = useMemo(() => cables.reduce((s, c) => s + (c.feet || 0), 0), [cables]);
+  const totalCableFeet = useMemo(
+    () => cables.reduce((s, c) => (c.type === "RAMP" ? s : s + (c.feet || 0)), 0),
+    [cables]
+  );
 
   // ────────────────────────────────────────────────────────────────────────────
   // Address search
@@ -1221,8 +1286,8 @@ export default function App() {
         // Clear cables
         for (const node of outletNodesRef.current.values()) node.el.remove();
         outletNodesRef.current.clear();
-        for (const node of quadCenterNodesRef.current.values()) node.el.remove();
-        quadCenterNodesRef.current.clear();
+        for (const node of lineCenterNodesRef.current.values()) node.el.remove();
+        lineCenterNodesRef.current.clear();
         for (const node of cableLabelNodesRef.current.values()) node.el.remove();
         cableLabelNodesRef.current.clear();
         setCables([]);
@@ -1888,6 +1953,7 @@ export default function App() {
               <option value="BANDED">Banded / 2/0</option>
               <option value="FOUR_O">4/0</option>
               <option value="QUAD">Quad</option>
+              <option value="RAMP">Cable Ramp</option>
             </select>
             <button onClick={clearCableDraft} style={lightBtn}>
               Cancel Draft
@@ -1943,6 +2009,8 @@ export default function App() {
           <div style={{ fontWeight: 900, marginBottom: 4 }}>Cable Tool</div>
           {cableType === "QUAD" ? (
             <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Click to place a 50ft Quad with 3 outlet boxes.</div>
+          ) : cableType === "RAMP" ? (
+            <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Click to place a 36" cable ramp. Drag the handle to rotate.</div>
           ) : (
             <>
               <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Click start point, then click end point.</div>
@@ -2094,7 +2162,8 @@ export default function App() {
             </div>
 
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8, marginBottom: 10, fontWeight: 900 }}>
-              Equipment placed: {placed.length} • Cable runs: {cables.length} • Cable drawn: {totalCableFeet.toFixed(1)} ft
+              Equipment placed: {placed.length} • Cable runs: {cables.filter((c) => c.type !== "RAMP").length} • Ramps placed:{" "}
+              {cables.filter((c) => c.type === "RAMP").length} • Cable drawn: {totalCableFeet.toFixed(1)} ft
             </div>
 
             <div style={{ padding: 10, borderRadius: 10, background: "#fff", border: "1px solid rgba(0,0,0,0.12)" }}>
