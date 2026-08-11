@@ -68,6 +68,12 @@ function best50_100(feet) {
   return { n100, n50, total, over, segs };
 }
 
+// Cable types stocked only in 50ft lengths - any run over 50ft is priced
+// and displayed as multiple physical 50ft cables, never a synthesized 100ft item.
+function is50ftOnlyCableType(type) {
+  return type === "FOUR_O" || type === "QUAD" || type === "BANDED";
+}
+
 function norm(s) {
   return String(s || "")
     .toLowerCase()
@@ -1084,55 +1090,34 @@ export default function App() {
     for (const run of cables) {
       const combo = best50_100(run.feet);
 
-      // Cable types that are only stocked in 50ft lengths - a 100ft run means
-      // pricing two 50ft cables (doubled), not a real 100ft catalog item.
-      // 30A and 50A are genuinely stocked in both lengths with their own
-      // 100ft pricing, so they use the real catalog lookup below instead.
-      const is50ftOnly = run.type === "FOUR_O" || run.type === "QUAD" || run.type === "BANDED";
+      const is50ftOnly = is50ftOnlyCableType(run.type);
 
       let segments;
       if (is50ftOnly) {
-        segments = [];
-        if (combo.n100 > 0) segments.push({ len: 100, qty: combo.n100, is_calculated: true });
-        if (combo.n50 > 0) segments.push({ len: 50, qty: combo.n50, is_calculated: false });
+        const n50 = combo.n100 * 2 + combo.n50;
+        segments = n50 > 0 ? [{ len: 50, qty: n50 }] : [];
       } else {
         segments = [
-          { len: 100, qty: combo.n100, is_calculated: false },
-          { len: 50, qty: combo.n50, is_calculated: false },
+          { len: 100, qty: combo.n100 },
+          { len: 50, qty: combo.n50 },
         ].filter((x) => x.qty > 0);
       }
 
       for (const seg of segments) {
-        let name, catalogItem, is_calculated;
-
-        if (seg.is_calculated) {
-          const matched50 = findCableItemStrict(run.type, 50);
-          if (matched50) {
-            name = matched50.name.replace(/50\s*ft|50ft|50'/i, "100ft");
-            catalogItem = matched50;
-            is_calculated = true;
-          } else {
-            name = `${run.type} ${seg.len}ft (NO CATALOG MATCH)`;
-            catalogItem = null;
-            is_calculated = false;
-          }
-        } else {
-          catalogItem = findCableItemStrict(run.type, seg.len);
-          name = catalogItem ? catalogItem.name : `${run.type} ${seg.len}ft (NO CATALOG MATCH)`;
-          is_calculated = false;
-        }
+        const catalogItem = findCableItemStrict(run.type, seg.len);
+        const name = catalogItem ? catalogItem.name : `${run.type} ${seg.len}ft (NO CATALOG MATCH)`;
 
         const gp = "Cable";
         const k = `${run.type}|${seg.len}|${gp}::${name}`;
         qty.set(k, (qty.get(k) || 0) + seg.qty);
-        if (!sample.has(k)) sample.set(k, { gp, name, catalogItem, is_calculated, matched: !!catalogItem });
+        if (!sample.has(k)) sample.set(k, { gp, name, catalogItem, matched: !!catalogItem });
       }
     }
 
     const rows = [];
     for (const [k, q] of qty.entries()) {
       const it = sample.get(k);
-      const rate = it.catalogItem ? (it.is_calculated ? rateFor(it.catalogItem) * 2 : rateFor(it.catalogItem)) : 0;
+      const rate = it.catalogItem ? rateFor(it.catalogItem) : 0;
       rows.push({
         kind: "cable",
         gp: it.gp,
@@ -1965,7 +1950,9 @@ export default function App() {
                 <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900 }}>
                   Draft: {draftFeet.toFixed(1)} ft{" "}
                   <span style={{ opacity: 0.75, fontWeight: 800 }}>
-                    (auto: {best50_100(draftFeet).n100}×100 + {best50_100(draftFeet).n50}×50)
+                    {is50ftOnlyCableType(cableType)
+                      ? `(auto: ${best50_100(draftFeet).n100 * 2 + best50_100(draftFeet).n50}×50)`
+                      : `(auto: ${best50_100(draftFeet).n100}×100 + ${best50_100(draftFeet).n50}×50)`}
                   </span>
                 </div>
               ) : (
