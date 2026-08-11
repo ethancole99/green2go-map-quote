@@ -105,7 +105,7 @@ function detectCableBucket(name) {
   const n = norm(name);
 
   if (hasAny(n, ["spider box cable"])) return "50A";
-  if (hasAny(n, ["2/5", "2-5", "2 5", "banded", "socapex", "5 wire", "5-wire"])) return "BANDED";
+  if (hasAny(n, ["2/0", "2-0", "2 0", "2/5", "2-5", "2 5", "banded", "socapex", "5 wire", "5-wire"])) return "BANDED";
   if (hasAny(n, ["4/0", "4-0", "4 0", "feeder"])) return "FOUR_O";
   if (hasAny(n, ["quad stringer", "quad", "stringer", "stinger"])) return "QUAD";
   if (hasAny(n, ["30a extension", "extension"])) return "30A";
@@ -116,7 +116,7 @@ function detectCableBucket(name) {
 function looksLikeCableRow(name) {
   const n = norm(name);
   if (n.includes("spider box") && !n.includes("cable")) return false;
-  return hasAny(n, ["cable", "extension", "stinger", "stringer", "quad", "banded", "socapex", "4/0", "2/5", "feeder"]);
+  return hasAny(n, ["cable", "extension", "stinger", "stringer", "quad", "banded", "socapex", "4/0", "2/0", "2/5", "feeder"]);
 }
 
 function extractSize(name, type) {
@@ -1900,7 +1900,7 @@ export default function App() {
             <select value={cableType} onChange={(e) => setCableType(e.target.value)} style={{ fontWeight: 900 }}>
               <option value="50A">50A</option>
               <option value="30A">30A</option>
-              <option value="BANDED">Banded / 2/5</option>
+              <option value="BANDED">Banded / 2/0</option>
               <option value="FOUR_O">4/0</option>
               <option value="QUAD">Quad</option>
             </select>
@@ -2165,7 +2165,7 @@ export default function App() {
               Cable catalog availability (from CSV):{" "}
               {["50", "100"].map((len) => (
                 <span key={len} style={{ marginLeft: 10 }}>
-                  {len}ft — 50A:{cableIndex[len]["50A"].length} 30A:{cableIndex[len]["30A"].length} 2/5:{cableIndex[len]["BANDED"].length} 4/0:
+                  {len}ft — 50A:{cableIndex[len]["50A"].length} 30A:{cableIndex[len]["30A"].length} 2/0:{cableIndex[len]["BANDED"].length} 4/0:
                   {cableIndex[len]["FOUR_O"].length} QUAD:{cableIndex[len]["QUAD"].length}
                 </span>
               ))}
