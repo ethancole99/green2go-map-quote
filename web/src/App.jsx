@@ -74,12 +74,47 @@ function is50ftOnlyCableType(type) {
   return type === "FOUR_O" || type === "QUAD" || type === "BANDED";
 }
 
-// Cable ramps are a fixed-size physical item, not a length of cable - always
-// exactly 36 inches (3ft) long, one flat-rate unit per placement.
+// Cable ramps are individual 36in (3ft) physical units laid end to end along
+// a drawn run - the run's length divides into a ramp count, same way cable
+// footage divides into 50/100ft segments.
 const RAMP_FEET = 3;
+// Visual width of the drawn ramp rectangle - cosmetic only, not priced.
+const RAMP_WIDTH_FT = 2;
 
-function metersToLngDegrees(meters, lat) {
-  return meters / (111320 * Math.cos((lat * Math.PI) / 180));
+function rampUnitsFor(feet) {
+  return Math.max(1, Math.ceil(Number(feet || 0) / RAMP_FEET));
+}
+
+// Builds a closed-ring outline (as a LineString - first point repeated last)
+// tracing a thin rectangle from a to b, halfWidthFt wide on each side. Used
+// to draw the ramp run as an unfilled rectangle instead of a plain line,
+// reusing the same line-layer/source as every other cable run.
+function rampRectangleRing(a, b, m, halfWidthFt) {
+  const pA = m.project([a.lng, a.lat]);
+  const pB = m.project([b.lng, b.lat]);
+  const dx = pB.x - pA.x;
+  const dy = pB.y - pA.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+
+  const mpp = metersPerPixel(m.getCenter().lat, m.getZoom());
+  const halfWidthPx = (halfWidthFt * 0.3048) / mpp;
+
+  const corners = [
+    { x: pA.x + px * halfWidthPx, y: pA.y + py * halfWidthPx },
+    { x: pB.x + px * halfWidthPx, y: pB.y + py * halfWidthPx },
+    { x: pB.x - px * halfWidthPx, y: pB.y - py * halfWidthPx },
+    { x: pA.x - px * halfWidthPx, y: pA.y - py * halfWidthPx },
+  ];
+  corners.push(corners[0]);
+
+  return corners.map((c) => {
+    const ll = m.unproject([c.x, c.y]);
+    return [ll.lng, ll.lat];
+  });
 }
 
 function norm(s) {
@@ -469,7 +504,7 @@ export default function App() {
           type: "line",
           source: cableSourceId,
           paint: {
-            "line-width": ["match", ["get", "type"], "RAMP", 10, 4],
+            "line-width": ["match", ["get", "type"], "RAMP", 3, 4],
             "line-opacity": 0.9,
             "line-color": [
               "match",
@@ -776,7 +811,7 @@ export default function App() {
 
     function onMouseMove(e) {
       if (tool !== "cable") return;
-      if (cableType === "QUAD" || cableType === "RAMP") return;
+      if (cableType === "QUAD") return;
       if (!cableDraftStart) return;
       setCableDraftEnd({ lng: e.lngLat.lng, lat: e.lngLat.lat });
     }
@@ -806,29 +841,6 @@ export default function App() {
         }
 
         setCables((prev) => [...prev, { id, type: cableType, a, b, feet: 50, rotation: 0 }]);
-        return;
-      }
-
-      if (cableType === "RAMP") {
-        const id = crypto.randomUUID();
-
-        let a, b;
-        if (customMapMode && m) {
-          const pixelsForRamp = RAMP_FEET * 3.5;
-          const centerPixel = m.project([p.lng, p.lat]);
-          const leftPixel = { x: centerPixel.x - pixelsForRamp / 2, y: centerPixel.y };
-          const rightPixel = { x: centerPixel.x + pixelsForRamp / 2, y: centerPixel.y };
-          const leftCoord = m.unproject(leftPixel);
-          const rightCoord = m.unproject(rightPixel);
-          a = { lng: leftCoord.lng, lat: leftCoord.lat };
-          b = { lng: rightCoord.lng, lat: rightCoord.lat };
-        } else {
-          const degLng = metersToLngDegrees(RAMP_FEET * 0.3048, p.lat);
-          a = { lng: p.lng - degLng / 2, lat: p.lat };
-          b = { lng: p.lng + degLng / 2, lat: p.lat };
-        }
-
-        setCables((prev) => [...prev, { id, type: cableType, a, b, feet: RAMP_FEET, rotation: 0 }]);
         return;
       }
 
@@ -910,10 +922,10 @@ export default function App() {
       nodeMap.set(key, { el, lng, lat });
     };
 
-    // Shared drag-to-rotate / shift+drag-to-move handle for fixed-length
-    // linear items (Quad, Ramp) that pivot around their own center point.
-    // offsetLng is half the item's on-map longitude span, held constant
-    // across the drag so the item keeps its true length while it rotates.
+    // Drag-to-rotate / shift+drag-to-move handle for the fixed-length Quad
+    // box, which pivots around its own center point. offsetLng is half its
+    // on-map longitude span, held constant across the drag so it keeps its
+    // true length while it rotates.
     const makeRotatableCenterHandle = ({ cableId, label, color, centerLng, centerLat, rotation, offsetLng }) => {
       const centerEl = document.createElement("div");
       centerEl.style.position = "absolute";
@@ -1012,16 +1024,21 @@ export default function App() {
     };
 
     for (const c of cables) {
+      const geometry =
+        c.type === "RAMP"
+          ? { type: "LineString", coordinates: rampRectangleRing(c.a, c.b, m, RAMP_WIDTH_FT / 2) }
+          : {
+              type: "LineString",
+              coordinates: [
+                [c.a.lng, c.a.lat],
+                [c.b.lng, c.b.lat],
+              ],
+            };
+
       features.push({
         type: "Feature",
         properties: { id: c.id, kind: "cable", feet: c.feet, type: c.type },
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            [c.a.lng, c.a.lat],
-            [c.b.lng, c.b.lat],
-          ],
-        },
+        geometry,
       });
 
       const midLng = (c.a.lng + c.b.lng) / 2;
@@ -1040,21 +1057,21 @@ export default function App() {
       labelEl.style.color = "#111";
       labelEl.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
       labelEl.style.whiteSpace = "nowrap";
-      labelEl.textContent = c.type === "RAMP" ? "Ramp" : `${Math.round(c.feet)}'`;
+      labelEl.textContent = c.type === "RAMP" ? `${Math.round(c.feet)}' (${rampUnitsFor(c.feet)}× ramps)` : `${Math.round(c.feet)}'`;
       labelEl.title = `${c.feet.toFixed(1)} feet`;
 
       place(labelEl, midLng, midLat, cableLabelNodesRef.current, `${c.id}-label`);
 
-      if (c.type === "QUAD" || c.type === "RAMP") {
+      if (c.type === "QUAD") {
         const centerLng = (c.a.lng + c.b.lng) / 2;
         const centerLat = (c.a.lat + c.b.lat) / 2;
         const rotation = c.rotation || 0;
-        const offsetLng = c.type === "QUAD" ? 0.00015 : metersToLngDegrees(RAMP_FEET * 0.3048, centerLat);
+        const offsetLng = 0.00015;
 
         const centerEl = makeRotatableCenterHandle({
           cableId: c.id,
-          label: c.type === "QUAD" ? "Q" : "R",
-          color: c.type === "QUAD" ? "#6a1b9a" : "#ff6f00",
+          label: "Q",
+          color: "#6a1b9a",
           centerLng,
           centerLat,
           rotation,
@@ -1063,41 +1080,44 @@ export default function App() {
 
         place(centerEl, centerLng, centerLat, lineCenterNodesRef.current, c.id);
 
-        if (c.type === "QUAD") {
-          for (let outlet = 1; outlet <= 3; outlet++) {
-            const progress = outlet / 4;
-            const lng = c.a.lng + (c.b.lng - c.a.lng) * progress;
-            const lat = c.a.lat + (c.b.lat - c.a.lat) * progress;
+        for (let outlet = 1; outlet <= 3; outlet++) {
+          const progress = outlet / 4;
+          const lng = c.a.lng + (c.b.lng - c.a.lng) * progress;
+          const lat = c.a.lat + (c.b.lat - c.a.lat) * progress;
 
-            const outletEl = document.createElement("div");
-            outletEl.style.position = "absolute";
-            outletEl.style.transform = "translate(-50%, -50%)";
-            outletEl.style.pointerEvents = "none";
-            outletEl.style.width = "12px";
-            outletEl.style.height = "12px";
-            outletEl.style.background = "#fff";
-            outletEl.style.border = "2px solid #6a1b9a";
-            outletEl.style.borderRadius = "2px";
-            outletEl.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
-            outletEl.title = `Quad Outlet ${outlet}`;
+          const outletEl = document.createElement("div");
+          outletEl.style.position = "absolute";
+          outletEl.style.transform = "translate(-50%, -50%)";
+          outletEl.style.pointerEvents = "none";
+          outletEl.style.width = "12px";
+          outletEl.style.height = "12px";
+          outletEl.style.background = "#fff";
+          outletEl.style.border = "2px solid #6a1b9a";
+          outletEl.style.borderRadius = "2px";
+          outletEl.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
+          outletEl.title = `Quad Outlet ${outlet}`;
 
-            place(outletEl, lng, lat, outletNodesRef.current, `${c.id}-outlet-${outlet}`);
-          }
+          place(outletEl, lng, lat, outletNodesRef.current, `${c.id}-outlet-${outlet}`);
         }
       }
     }
 
     if (tool === "cable" && cableDraftStart && cableDraftEnd) {
+      const draftGeometry =
+        cableType === "RAMP"
+          ? { type: "LineString", coordinates: rampRectangleRing(cableDraftStart, cableDraftEnd, m, RAMP_WIDTH_FT / 2) }
+          : {
+              type: "LineString",
+              coordinates: [
+                [cableDraftStart.lng, cableDraftStart.lat],
+                [cableDraftEnd.lng, cableDraftEnd.lat],
+              ],
+            };
+
       features.push({
         type: "Feature",
         properties: { id: "draft", kind: "draft", type: cableType },
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            [cableDraftStart.lng, cableDraftStart.lat],
-            [cableDraftEnd.lng, cableDraftEnd.lat],
-          ],
-        },
+        geometry: draftGeometry,
       });
     }
 
@@ -1145,7 +1165,7 @@ export default function App() {
         const name = catalogItem ? catalogItem.name : "Cable Ramp (NO CATALOG MATCH)";
         const gp = "Ramp";
         const k = `RAMP|${gp}::${name}`;
-        qty.set(k, (qty.get(k) || 0) + 1);
+        qty.set(k, (qty.get(k) || 0) + rampUnitsFor(run.feet));
         if (!sample.has(k)) sample.set(k, { gp, name, catalogItem, matched: !!catalogItem });
         continue;
       }
@@ -2009,8 +2029,6 @@ export default function App() {
           <div style={{ fontWeight: 900, marginBottom: 4 }}>Cable Tool</div>
           {cableType === "QUAD" ? (
             <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Click to place a 50ft Quad with 3 outlet boxes.</div>
-          ) : cableType === "RAMP" ? (
-            <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Click to place a 36" cable ramp. Drag the handle to rotate.</div>
           ) : (
             <>
               <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Click start point, then click end point.</div>
@@ -2018,7 +2036,9 @@ export default function App() {
                 <div style={{ marginTop: 8, fontSize: 12, fontWeight: 900 }}>
                   Draft: {draftFeet.toFixed(1)} ft{" "}
                   <span style={{ opacity: 0.75, fontWeight: 800 }}>
-                    {is50ftOnlyCableType(cableType)
+                    {cableType === "RAMP"
+                      ? `(auto: ${rampUnitsFor(draftFeet)}× ramps)`
+                      : is50ftOnlyCableType(cableType)
                       ? `(auto: ${best50_100(draftFeet).n100 * 2 + best50_100(draftFeet).n50}×50)`
                       : `(auto: ${best50_100(draftFeet).n100}×100 + ${best50_100(draftFeet).n50}×50)`}
                   </span>
@@ -2162,8 +2182,9 @@ export default function App() {
             </div>
 
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8, marginBottom: 10, fontWeight: 900 }}>
-              Equipment placed: {placed.length} • Cable runs: {cables.filter((c) => c.type !== "RAMP").length} • Ramps placed:{" "}
-              {cables.filter((c) => c.type === "RAMP").length} • Cable drawn: {totalCableFeet.toFixed(1)} ft
+              Equipment placed: {placed.length} • Cable runs: {cables.filter((c) => c.type !== "RAMP").length} • Ramps:{" "}
+              {cables.filter((c) => c.type === "RAMP").reduce((s, c) => s + rampUnitsFor(c.feet), 0)} • Cable drawn:{" "}
+              {totalCableFeet.toFixed(1)} ft
             </div>
 
             <div style={{ padding: 10, borderRadius: 10, background: "#fff", border: "1px solid rgba(0,0,0,0.12)" }}>
