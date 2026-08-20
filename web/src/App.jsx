@@ -135,21 +135,19 @@ function hasAny(hay, arr) {
 
 function detectLengthFt(name) {
   const n = norm(name);
-  if (
-    /\b50\s*(ft|feet|foot)\b/.test(n) ||
-    /\b50ft\b/.test(n) ||
-    n.includes("50'") ||
-    /(^|[^0-9])50([^0-9]|$)/.test(n)
-  )
-    return 50;
 
-  if (
-    /\b100\s*(ft|feet|foot)\b/.test(n) ||
-    /\b100ft\b/.test(n) ||
-    n.includes("100'") ||
-    /(^|[^0-9])100([^0-9]|$)/.test(n)
-  )
-    return 100;
+  // Explicit unit suffixes ("50ft", "100 feet", "50'") are checked first and
+  // take priority over the bare-number fallback below - otherwise a name
+  // like "50A Spider Box Cable 100ft" gets misread as 50ft, because the
+  // amp rating "50A" itself looks like a standalone "50".
+  const has50Suffix = /\b50\s*(ft|feet|foot)\b/.test(n) || /\b50ft\b/.test(n) || n.includes("50'");
+  const has100Suffix = /\b100\s*(ft|feet|foot)\b/.test(n) || /\b100ft\b/.test(n) || n.includes("100'");
+
+  if (has100Suffix) return 100;
+  if (has50Suffix) return 50;
+
+  if (/(^|[^0-9])100([^0-9]|$)/.test(n)) return 100;
+  if (/(^|[^0-9])50([^0-9]|$)/.test(n)) return 50;
 
   return null;
 }
