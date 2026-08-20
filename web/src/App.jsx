@@ -79,7 +79,11 @@ function is50ftOnlyCableType(type) {
 // footage divides into 50/100ft segments.
 const RAMP_FEET = 3;
 // Visual width of the drawn ramp rectangle - cosmetic only, not priced.
-const RAMP_WIDTH_FT = 2;
+const RAMP_WIDTH_FT = 4;
+// Never let the rectangle go thinner than this on screen, even zoomed out to
+// fit a whole parking lot - otherwise it reads as just another line next to
+// the cable runs instead of a distinct ramp shape.
+const RAMP_MIN_HALF_WIDTH_PX = 12;
 
 function rampUnitsFor(feet) {
   return Math.max(1, Math.ceil(Number(feet || 0) / RAMP_FEET));
@@ -101,7 +105,7 @@ function rampRectangleRing(a, b, m, halfWidthFt) {
   const py = ux;
 
   const mpp = metersPerPixel(m.getCenter().lat, m.getZoom());
-  const halfWidthPx = (halfWidthFt * 0.3048) / mpp;
+  const halfWidthPx = Math.max(RAMP_MIN_HALF_WIDTH_PX, (halfWidthFt * 0.3048) / mpp);
 
   const corners = [
     { x: pA.x + px * halfWidthPx, y: pA.y + py * halfWidthPx },
@@ -504,7 +508,7 @@ export default function App() {
           type: "line",
           source: cableSourceId,
           paint: {
-            "line-width": ["match", ["get", "type"], "RAMP", 3, 4],
+            "line-width": 4,
             "line-opacity": 0.9,
             "line-color": [
               "match",
