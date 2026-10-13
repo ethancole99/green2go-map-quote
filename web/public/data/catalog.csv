@@ -4,16 +4,12 @@ AC,10 Ton AC Unit,625.0,1250.0,3750.0
 AC,20 Ton AC Unit,780.0,1560.0,4691.0
 AC,25 Ton AC Unit w/Trailer,862.5,1725.0,5175.0
 AC,Evaporative Cooler,150.0,300.0,900.0
-Distro,50A Spider Box,75.0,150.0,450.0
 Distro,100A Quad Panel,100.0,200.0,600.0
-Distro,100A California Panel,125.0,250.0,750.0
 Distro,200A Quad Panel,200.0,400.0,1200.0
-Distro,200A California Panel,200.0,400.0,1200.0
-Distro,200A Disconnect,150.0,300.0,900.0
-Distro,208V Splitter Panel,200.0,400.0,1200.0
-Distro,480V Splitter Panel,125.0,250.0,750.0
-Distro,30A RV Panel,125.0,250.0,750.0
-Distro,30A Twist Lock 480V,125.0,250.0,750.0
+Distro,100A 50 Panel,100.0,200.0,600.0
+Distro,200A 50 Panel,200.0,400.0,1200.0
+Distro,RV Panel,125.0,250.0,750.0
+Distro,Spiderbox,75.0,150.0,300.0
 Gens,10kW Diesel,150.0,300.0,900.0
 Gens,20kW Diesel,315.0,630.0,1890.0
 Gens,20kW Propane,330.0,660.0,1980.0

@@ -199,11 +199,14 @@ function extractSize(name, type) {
   }
 
   if (type === "Distro") {
+    if (n.includes("quad")) {
+      const ampMatch = n.match(/(\d+)\s*a/);
+      return (ampMatch ? ampMatch[1] : "") + "Q";
+    }
+    if (n.includes("rv")) return "RV";
+    if (n.includes("spider")) return "SB";
     const ampMatch = n.match(/(\d+)\s*a/);
     if (ampMatch) return ampMatch[1] + "A";
-    if (n.includes("spider")) return "SB";
-    if (n.includes("quad")) return "QB";
-    if (n.includes("cam")) return "CM";
     return "D";
   }
 
