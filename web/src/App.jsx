@@ -365,6 +365,11 @@ const THEME = {
   accent: "#00c853",
   accentText: "#06150a",
   danger: "#ff5252",
+  // Used throughout the rest of the app's panels/menus/forms:
+  inputBg: "#0f131b",
+  rowBg: "#1c2230",
+  rowBorder: "rgba(255,255,255,0.1)",
+  border: "rgba(255,255,255,0.1)",
 };
 
 // Base map styles the user can switch between on the fly, mirroring
@@ -469,10 +474,10 @@ export default function App() {
   }, [equipSizeAdjust]);
 
   const uiPanelStyle = {
-    background: "rgba(255,255,255,0.94)",
-    border: "1px solid rgba(0,0,0,0.15)",
-    boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
-    color: "#111",
+    background: THEME.panel,
+    border: `1px solid ${THEME.panelBorder}`,
+    boxShadow: "0 8px 30px rgba(0,0,0,0.45)",
+    color: THEME.text,
   };
 
   const baseBtn = {
@@ -486,13 +491,22 @@ export default function App() {
   };
 
   const lightBtn = {
-    background: "#fff",
-    color: "#111",
-    border: "1px solid rgba(0,0,0,0.18)",
+    background: THEME.rowBg,
+    color: THEME.text,
+    border: `1px solid ${THEME.rowBorder}`,
     borderRadius: 12,
     padding: "10px 14px",
     fontWeight: 900,
     cursor: "pointer",
+  };
+
+  const selectStyle = {
+    fontWeight: 900,
+    background: THEME.inputBg,
+    color: THEME.text,
+    border: `1px solid ${THEME.border}`,
+    borderRadius: 8,
+    padding: "6px 8px",
   };
 
   function rateFor(it) {
@@ -1977,10 +1991,10 @@ export default function App() {
               flex: 1,
               padding: "10px 12px",
               borderRadius: 12,
-              border: "1px solid rgba(0,0,0,0.18)",
+              border: `1px solid ${THEME.border}`,
               outline: "none",
-              color: "#111",
-              background: "#fff",
+              color: THEME.text,
+              background: THEME.inputBg,
               fontWeight: 800,
             }}
           />
@@ -1988,7 +2002,7 @@ export default function App() {
             {searching ? "Searching…" : "Go"}
           </button>
         </div>
-        {searchErr ? <div style={{ marginTop: 6, fontSize: 12, color: "#b00020", fontWeight: 900 }}>{searchErr}</div> : null}
+        {searchErr ? <div style={{ marginTop: 6, fontSize: 12, color: THEME.danger, fontWeight: 900 }}>{searchErr}</div> : null}
       </div>
 
       {/* MAP MENU (dropdown: zoom, compass, style switcher) */}
@@ -2030,7 +2044,7 @@ export default function App() {
                   <Compass size={16} />
                 </button>
               </div>
-              <div style={{ height: 1, background: "rgba(0,0,0,0.12)", margin: "2px 0" }} />
+              <div style={{ height: 1, background: THEME.panelBorder, margin: "2px 0" }} />
               {MAP_STYLES.map((s) => (
                 <button
                   key={s.id}
@@ -2119,9 +2133,9 @@ export default function App() {
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
-                    background: "#ffebee",
-                    color: "#d32f2f",
-                    border: "1px solid #d32f2f",
+                    background: "rgba(255,82,82,0.12)",
+                    color: THEME.danger,
+                    border: `1px solid ${THEME.danger}`,
                   }}
                 >
                   <Trash2 size={14} /> Remove Map
@@ -2257,7 +2271,7 @@ export default function App() {
             }}
           >
             <div style={{ fontSize: 12, fontWeight: 900 }}>Type</div>
-            <select value={cableType} onChange={(e) => setCableType(e.target.value)} style={{ fontWeight: 900 }}>
+            <select value={cableType} onChange={(e) => setCableType(e.target.value)} style={selectStyle}>
               <option value="50A">50A</option>
               <option value="30A">30A</option>
               <option value="BANDED">Banded / 2/0</option>
@@ -2282,7 +2296,7 @@ export default function App() {
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 900 }}>Billing:</div>
-          <select value={billingTerm} onChange={(e) => setBillingTerm(e.target.value)} style={{ fontWeight: 900 }}>
+          <select value={billingTerm} onChange={(e) => setBillingTerm(e.target.value)} style={selectStyle}>
             <option value="day">Daily</option>
             <option value="week">Weekly</option>
             <option value="month">Monthly</option>
@@ -2385,7 +2399,7 @@ export default function App() {
 
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, marginBottom: 10 }}>
               <div style={{ fontSize: 12, opacity: 0.75, fontWeight: 900 }}>Billing:</div>
-              <select value={billingTerm} onChange={(e) => setBillingTerm(e.target.value)} style={{ fontWeight: 900 }}>
+              <select value={billingTerm} onChange={(e) => setBillingTerm(e.target.value)} style={selectStyle}>
                 <option value="day">Daily</option>
                 <option value="week">Weekly</option>
                 <option value="month">Monthly</option>
@@ -2437,9 +2451,9 @@ export default function App() {
                           marginBottom: 8,
                           borderRadius: 10,
                           cursor: "grab",
-                          background: "#fff",
-                          color: "#111",
-                          border: "1px solid rgba(0,0,0,0.15)",
+                          background: THEME.rowBg,
+                          color: THEME.text,
+                          border: `1px solid ${THEME.rowBorder}`,
                           fontWeight: 900,
                         }}
                       >
@@ -2490,7 +2504,7 @@ export default function App() {
               drawn: {totalCableFeet.toFixed(1)} ft
             </div>
 
-            <div style={{ padding: 10, borderRadius: 10, background: "#fff", border: "1px solid rgba(0,0,0,0.12)" }}>
+            <div style={{ padding: 10, borderRadius: 10, background: THEME.rowBg, border: `1px solid ${THEME.rowBorder}` }}>
               <div style={{ fontWeight: 900, marginBottom: 6 }}>Equipment</div>
               {equipmentBom.length === 0 ? (
                 <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.8 }}>No equipment yet.</div>
@@ -2507,14 +2521,14 @@ export default function App() {
                   </div>
                 ))
               )}
-              <div style={{ borderTop: "1px solid rgba(0,0,0,0.12)", marginTop: 8, paddingTop: 8, fontWeight: 900, textAlign: "right" }}>
+              <div style={{ borderTop: `1px solid ${THEME.rowBorder}`, marginTop: 8, paddingTop: 8, fontWeight: 900, textAlign: "right" }}>
                 Equipment Total: {money(equipmentTotal2)}
               </div>
             </div>
 
             <div style={{ height: 10 }} />
 
-            <div style={{ padding: 10, borderRadius: 10, background: "#fff", border: "1px solid rgba(0,0,0,0.12)" }}>
+            <div style={{ padding: 10, borderRadius: 10, background: THEME.rowBg, border: `1px solid ${THEME.rowBorder}` }}>
               <div style={{ fontWeight: 900, marginBottom: 6 }}>Cables</div>
               {cableBom.length === 0 ? (
                 <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.8 }}>No cables yet.</div>
@@ -2523,21 +2537,21 @@ export default function App() {
                   <div key={`cb-${r.name}`} style={{ display: "grid", gridTemplateColumns: "50px 1fr 90px 100px", gap: 10, padding: "6px 0" }}>
                     <div style={{ fontWeight: 900 }}>{r.qty}×</div>
                     <div style={{ fontWeight: 800 }}>
-                      {r.name} {!r.matched ? <span style={{ color: "#b00020" }}>(not in CSV)</span> : null}
+                      {r.name} {!r.matched ? <span style={{ color: THEME.danger }}>(not in CSV)</span> : null}
                     </div>
                     <div style={{ textAlign: "right", fontWeight: 900 }}>{money(r.rate)}</div>
                     <div style={{ textAlign: "right", fontWeight: 900 }}>{money(r.subtotal)}</div>
                   </div>
                 ))
               )}
-              <div style={{ borderTop: "1px solid rgba(0,0,0,0.12)", marginTop: 8, paddingTop: 8, fontWeight: 900, textAlign: "right" }}>
+              <div style={{ borderTop: `1px solid ${THEME.rowBorder}`, marginTop: 8, paddingTop: 8, fontWeight: 900, textAlign: "right" }}>
                 Cable Total: {money(cableTotal)}
               </div>
             </div>
 
             <div style={{ height: 14 }} />
 
-            <div style={{ padding: 12, borderRadius: 12, background: "#111", color: "#fff", fontWeight: 900, fontSize: 16, textAlign: "right" }}>
+            <div style={{ padding: 12, borderRadius: 12, background: THEME.accent, color: THEME.accentText, fontWeight: 900, fontSize: 16, textAlign: "right" }}>
               GRAND TOTAL: {money(total)}
             </div>
 
