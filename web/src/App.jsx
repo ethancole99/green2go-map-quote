@@ -1114,7 +1114,7 @@ export default function App() {
     // themselves (which already know exactly which equipment was clicked,
     // and sit in a DOM overlay on top of the canvas that would otherwise
     // swallow the click before Mapbox's own handler ever sees it).
-    function handleEquipmentClickForCable(near) {
+    function handleEquipmentClickForCable(near, rawPoint) {
       const label = CABLE_TYPE_LABELS[cableType] || cableType;
       const rules = cableEndpointRules(cableType);
       if (!rules.requiresFromSnap) return;
@@ -1139,7 +1139,22 @@ export default function App() {
 
       const a = cableDraftStart;
       if (!near) {
-        alert(`Click directly on the equipment this ${label} cable ends at.`);
+        // Nothing to snap to here - treat this as a free/unterminated drop
+        // point (e.g. a 50A cable laid out for a job trailer to plug into
+        // directly, not into any modeled equipment). Equipment markers
+        // always pass a non-null `near`, so this only applies to bare-canvas
+        // clicks away from anything placed.
+        if (!rawPoint) {
+          alert(`Click directly on the equipment this ${label} cable ends at, or click open ground to leave it unterminated.`);
+          cableFromIdRef.current = null;
+          setCableDraftStart(null);
+          setCableDraftEnd(null);
+          return;
+        }
+        const b = rawPoint;
+        const feet = customMapMode ? customMapDistance(a, b, m) : mToFt(haversineMeters(a, b));
+        const id = crypto.randomUUID();
+        setCables((prev) => [...prev, { id, type: cableType, a, b, feet, fromId: cableFromIdRef.current, toId: null }]);
         cableFromIdRef.current = null;
         setCableDraftStart(null);
         setCableDraftEnd(null);
@@ -1224,7 +1239,7 @@ export default function App() {
       }
 
       if (rules.requiresToSnap) {
-        handleEquipmentClickForCable(findNearbyEquipment(p));
+        handleEquipmentClickForCable(findNearbyEquipment(p), p);
         return;
       }
 
