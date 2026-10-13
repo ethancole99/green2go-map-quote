@@ -751,6 +751,10 @@ export default function App() {
     const { root, del, shape, baseWidthPx } = makeEquipmentMarkerEl(it);
     const realMeters = equipRealMeters(it?.gp || "");
 
+    const updateCoordTitle = (curLng, curLat) => {
+      root.title = `${it.gp}: ${it.name}\nLat/Lng: ${curLat.toFixed(6)}, ${curLng.toFixed(6)}\nShift+Drag to move | Right-click to delete`;
+    };
+
     const removePlaced = (rid) => {
       const node = equipNodesRef.current.get(rid);
       if (node) {
@@ -789,6 +793,7 @@ export default function App() {
       const pt = m.project([ll.lng, ll.lat]);
       root.style.left = `${pt.x}px`;
       root.style.top = `${pt.y}px`;
+      updateCoordTitle(ll.lng, ll.lat);
     };
     const onMouseUp = () => {
       if (!dragging) return;
@@ -813,6 +818,7 @@ export default function App() {
     const p = m.project([lng, lat]);
     root.style.left = `${p.x}px`;
     root.style.top = `${p.y}px`;
+    updateCoordTitle(lng, lat);
     const baseInitialScale = customMapModeRef.current
       ? EQUIP_SIZE_MULTIPLIER
       : equipScaleForRealMeters(it?.gp, realMeters, metersPerPixel(lat, m.getZoom()), baseWidthPx);
@@ -1110,7 +1116,7 @@ export default function App() {
       labelEl.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
       labelEl.style.whiteSpace = "nowrap";
       labelEl.textContent = c.type === "RAMP" ? `${Math.round(c.feet)}' (${rampUnitsFor(c.feet)}× ramps)` : `${Math.round(c.feet)}'`;
-      labelEl.title = `${c.feet.toFixed(1)} feet`;
+      labelEl.title = `${c.feet.toFixed(1)} feet\nStart: ${c.a.lat.toFixed(6)}, ${c.a.lng.toFixed(6)}\nEnd: ${c.b.lat.toFixed(6)}, ${c.b.lng.toFixed(6)}`;
 
       place(labelEl, midLng, midLat, cableLabelNodesRef.current, `${c.id}-label`);
 
