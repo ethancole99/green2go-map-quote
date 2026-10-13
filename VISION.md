@@ -35,7 +35,7 @@ Grouped by area. ✅ built · 🔲 not built yet. This is the complete list — 
 - ✅ Equipment placement, true-to-scale, with manual size override
 - ✅ Cable runs with real stocked-length pricing (50ft/100ft)
 - ✅ Cable Ramp as a drawn, counted rectangle
-- 🔲 **Real electrical connections** — cables snap to and know which equipment they connect (generator → distro → AC), move with the equipment instead of floating independently; data model should support load/circuit reasoning later
+- ✅ **Real electrical connections** — cables snap to and validate against the real equipment topology (Generator → Distro/AC via camlock, Generator/50-Panel/Spiderbox → Spiderbox via 50A, Quad Panel → Quad Stringer/30A Extension), move with their equipment when dragged, and are removed when either end is deleted. Port counts aren't capped (T-adapters make that unrealistic to enforce) - only connection *type* compatibility is validated.
 - 🔲 Resizable infrastructure/zones with length/area shown live as you draw (we already show cable length; general zone/barrier drawing with live area calc is new)
 - 🔲 Dot planning — staff/personnel placement markers
 - 🔲 Route plotting — pedestrian/vehicle path routes
