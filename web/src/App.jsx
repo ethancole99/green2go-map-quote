@@ -467,6 +467,15 @@ export default function App() {
   // Equipment id a cable draft is connected to at its start (set on the
   // start click, consumed when the draft is completed or cancelled).
   const cableFromIdRef = useRef(null);
+  // Current tool, readable from imperative DOM handlers (equipment markers)
+  // that are created once and don't get fresh closures on every render.
+  const toolRef = useRef("select");
+  // Set by the Cable Tool effect to the latest "handle this equipment as a
+  // cable connection point" function, so equipment markers - which sit in a
+  // separate DOM overlay on top of the map canvas and intercept clicks
+  // before they ever reach Mapbox's own click handler - can feed directly
+  // into the same snap/validate logic as clicking bare map canvas near one.
+  const cableMarkerClickRef = useRef(null);
 
   // Equipment overlay + nodes
   const equipOverlayRef = useRef(null);
@@ -500,6 +509,9 @@ export default function App() {
   const [searchErr, setSearchErr] = useState("");
 
   const [tool, setTool] = useState("select");
+  useEffect(() => {
+    toolRef.current = tool;
+  }, [tool]);
   const [cableType, setCableType] = useState("50A");
   const [cableDraftStart, setCableDraftStart] = useState(null);
   const [cableDraftEnd, setCableDraftEnd] = useState(null);
@@ -923,6 +935,18 @@ export default function App() {
       if (confirm("Delete this equipment?")) removePlaced(id);
     };
 
+    // Cable Tool clicks: equipment markers sit in their own DOM overlay on
+    // top of the map canvas, so a click here never reaches Mapbox's own
+    // click handler - forward it to the same snap/validate logic directly,
+    // using this marker's own identity instead of a pixel-distance search.
+    root.addEventListener("click", (e) => {
+      if (toolRef.current !== "cable") return;
+      e.stopPropagation();
+      const node = equipNodesRef.current.get(id);
+      if (!node) return;
+      cableMarkerClickRef.current?.({ id, lng: node.lng, lat: node.lat, gp: node.it?.gp, name: node.it?.name });
+    });
+
     // shift+drag move
     let dragging = false;
     const onMouseMove = (ev) => {
@@ -1085,11 +1109,96 @@ export default function App() {
       setCableDraftEnd({ lng: e.lngLat.lng, lat: e.lngLat.lat });
     }
 
+    // Shared by the map's own click handler (bare canvas, falls back to a
+    // pixel-distance search for nearby equipment) and by equipment markers
+    // themselves (which already know exactly which equipment was clicked,
+    // and sit in a DOM overlay on top of the canvas that would otherwise
+    // swallow the click before Mapbox's own handler ever sees it).
+    function handleEquipmentClickForCable(near) {
+      const label = CABLE_TYPE_LABELS[cableType] || cableType;
+      const rules = cableEndpointRules(cableType);
+      if (!rules.requiresFromSnap) return;
+
+      if (!cableDraftStart) {
+        if (!near) {
+          alert(`Click directly on the equipment this ${label} cable starts from.`);
+          return;
+        }
+        const fromRole = equipRole(near.gp, near.name);
+        if (!canCableStartFrom(cableType, fromRole, near.name)) {
+          alert(`A ${label} cable can't start from ${near.name}.`);
+          return;
+        }
+        cableFromIdRef.current = near.id;
+        setCableDraftStart({ lng: near.lng, lat: near.lat });
+        setCableDraftEnd({ lng: near.lng, lat: near.lat });
+        return;
+      }
+
+      if (!rules.requiresToSnap) return;
+
+      const a = cableDraftStart;
+      if (!near) {
+        alert(`Click directly on the equipment this ${label} cable ends at.`);
+        cableFromIdRef.current = null;
+        setCableDraftStart(null);
+        setCableDraftEnd(null);
+        return;
+      }
+      const toRole = equipRole(near.gp, near.name);
+      if (!canCableEndAt(cableType, toRole)) {
+        alert(`A ${label} cable can't end at ${near.name}.`);
+        cableFromIdRef.current = null;
+        setCableDraftStart(null);
+        setCableDraftEnd(null);
+        return;
+      }
+      const b = { lng: near.lng, lat: near.lat };
+
+      const feet = customMapMode ? customMapDistance(a, b, m) : mToFt(haversineMeters(a, b));
+      const id = crypto.randomUUID();
+      setCables((prev) => [...prev, { id, type: cableType, a, b, feet, fromId: cableFromIdRef.current, toId: near.id }]);
+      cableFromIdRef.current = null;
+      setCableDraftStart(null);
+      setCableDraftEnd(null);
+    }
+    // Places a Quad Stringer spanning 50ft centered at p, fed by quadPanel.
+    function placeQuadStringerAt(p, quadPanel) {
+      const id = crypto.randomUUID();
+
+      let a, b;
+      if (customMapMode && m) {
+        const pixelsFor50ft = 175;
+        const centerPixel = m.project([p.lng, p.lat]);
+        const leftPixel = { x: centerPixel.x - pixelsFor50ft / 2, y: centerPixel.y };
+        const rightPixel = { x: centerPixel.x + pixelsFor50ft / 2, y: centerPixel.y };
+        const leftCoord = m.unproject(leftPixel);
+        const rightCoord = m.unproject(rightPixel);
+        a = { lng: leftCoord.lng, lat: leftCoord.lat };
+        b = { lng: rightCoord.lng, lat: rightCoord.lat };
+      } else {
+        const offsetLng = 0.00015;
+        a = { lng: p.lng - offsetLng / 2, lat: p.lat };
+        b = { lng: p.lng + offsetLng / 2, lat: p.lat };
+      }
+
+      setCables((prev) => [...prev, { id, type: "QUAD", a, b, feet: 50, rotation: 0, fromId: quadPanel.id, toId: null }]);
+    }
+
+    cableMarkerClickRef.current = (near) => {
+      if (tool !== "cable") return;
+      if (cableType === "QUAD") {
+        if (equipRole(near?.gp, near?.name) !== "QUAD_PANEL") return;
+        placeQuadStringerAt({ lng: near.lng, lat: near.lat }, near);
+        return;
+      }
+      handleEquipmentClickForCable(near);
+    };
+
     function onClick(e) {
       if (tool !== "cable") return;
 
       const p = { lng: e.lngLat.lng, lat: e.lngLat.lat };
-      const label = CABLE_TYPE_LABELS[cableType] || cableType;
 
       if (cableType === "QUAD") {
         const quadPanel = findNearestQuadPanel(p);
@@ -1097,26 +1206,7 @@ export default function App() {
           alert("Place a Quad Panel first - a Quad Stringer has to be fed from one.");
           return;
         }
-
-        const id = crypto.randomUUID();
-
-        let a, b;
-        if (customMapMode && m) {
-          const pixelsFor50ft = 175;
-          const centerPixel = m.project([p.lng, p.lat]);
-          const leftPixel = { x: centerPixel.x - pixelsFor50ft / 2, y: centerPixel.y };
-          const rightPixel = { x: centerPixel.x + pixelsFor50ft / 2, y: centerPixel.y };
-          const leftCoord = m.unproject(leftPixel);
-          const rightCoord = m.unproject(rightPixel);
-          a = { lng: leftCoord.lng, lat: leftCoord.lat };
-          b = { lng: rightCoord.lng, lat: rightCoord.lat };
-        } else {
-          const offsetLng = 0.00015;
-          a = { lng: p.lng - offsetLng / 2, lat: p.lat };
-          b = { lng: p.lng + offsetLng / 2, lat: p.lat };
-        }
-
-        setCables((prev) => [...prev, { id, type: cableType, a, b, feet: 50, rotation: 0, fromId: quadPanel.id, toId: null }]);
+        placeQuadStringerAt(p, quadPanel);
         return;
       }
 
@@ -1129,52 +1219,21 @@ export default function App() {
           setCableDraftEnd(p);
           return;
         }
-
-        const near = findNearbyEquipment(p);
-        if (!near) {
-          alert(`Click directly on the equipment this ${label} cable starts from.`);
-          return;
-        }
-        const fromRole = equipRole(near.gp, near.name);
-        if (!canCableStartFrom(cableType, fromRole, near.name)) {
-          alert(`A ${label} cable can't start from ${near.name}.`);
-          return;
-        }
-
-        cableFromIdRef.current = near.id;
-        setCableDraftStart({ lng: near.lng, lat: near.lat });
-        setCableDraftEnd({ lng: near.lng, lat: near.lat });
+        handleEquipmentClickForCable(findNearbyEquipment(p));
         return;
       }
 
-      const a = cableDraftStart;
-      let b = p;
-      let toId = null;
-
       if (rules.requiresToSnap) {
-        const near = findNearbyEquipment(p);
-        if (!near) {
-          alert(`Click directly on the equipment this ${label} cable ends at.`);
-          cableFromIdRef.current = null;
-          setCableDraftStart(null);
-          setCableDraftEnd(null);
-          return;
-        }
-        const toRole = equipRole(near.gp, near.name);
-        if (!canCableEndAt(cableType, toRole)) {
-          alert(`A ${label} cable can't end at ${near.name}.`);
-          cableFromIdRef.current = null;
-          setCableDraftStart(null);
-          setCableDraftEnd(null);
-          return;
-        }
-        b = { lng: near.lng, lat: near.lat };
-        toId = near.id;
+        handleEquipmentClickForCable(findNearbyEquipment(p));
+        return;
       }
 
+      // Free end (e.g. 30A's far end) - lands wherever clicked, no validation.
+      const a = cableDraftStart;
+      const b = p;
       const feet = customMapMode ? customMapDistance(a, b, m) : mToFt(haversineMeters(a, b));
       const id = crypto.randomUUID();
-      setCables((prev) => [...prev, { id, type: cableType, a, b, feet, fromId: cableFromIdRef.current, toId }]);
+      setCables((prev) => [...prev, { id, type: cableType, a, b, feet, fromId: cableFromIdRef.current, toId: null }]);
       cableFromIdRef.current = null;
       setCableDraftStart(null);
       setCableDraftEnd(null);
@@ -1204,6 +1263,7 @@ export default function App() {
       m.off("mousemove", onMouseMove);
       m.off("click", onClick);
       m.off("contextmenu", onContextMenu);
+      cableMarkerClickRef.current = null;
     };
   }, [tool, cableType, cableDraftStart, customMapMode]);
 
