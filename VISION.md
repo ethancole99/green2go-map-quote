@@ -1,8 +1,8 @@
 # Green2Go — Vision & Product Spec
 
-**One-line mission:** Green2Go is what OnePlan would be if it were built specifically for event power distribution — true-to-scale drag-and-drop placement of generators, AC units, distro panels, and cable runs on a satellite map or an uploaded site plan, producing a priced, professional-looking quote.
+**One-line mission:** Green2Go is the 100% electrically-capable version of OnePlan — every feature OnePlan offers for general event planning, reinterpreted and built for event power distribution: generators, AC units, distro panels, and cable runs, true-to-scale on a satellite map or an uploaded site plan, producing a priced, professional-looking quote.
 
-OnePlan is the reference point for *capability and feel* (browser-based, true-to-scale, drag-and-drop, georeferenced overlays, auto-generated Bill of Quantities). We are not cloning OnePlan's code — it's closed-source — we're building our own tool aimed at full feature parity with it, adapted to electrical/power planning instead of general event floor plans. **Target: every feature OnePlan has, reinterpreted for our use case.**
+OnePlan is the reference point for *capability and feel* (browser-based, true-to-scale, drag-and-drop, georeferenced overlays, auto-generated Bill of Quantities). This isn't about matching OnePlan feature-for-feature as a literal copy — it's about matching its full capability while being the electrical specialist it isn't. We are not cloning OnePlan's code either; it's closed-source, so everything here gets built fresh. **Target: every feature on the list below, built for electrical.**
 
 ## Who this is for
 
