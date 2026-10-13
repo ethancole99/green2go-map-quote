@@ -23,6 +23,7 @@ Grouped by area. ✅ built · 🔲 not built yet. This is the complete list — 
 
 ### Map & overlays
 - ✅ Satellite map, true-to-scale
+- ✅ Map view switcher — toggle between Satellite, Hybrid (satellite + street labels), and Streets, matching OnePlan's map-type switcher
 - 🔲 **Georeferenced overlay tool** — upload a site plan/CAD/aerial image, keep satellite imagery visible underneath, opacity slider to blend them, draggable corner handles + rotate handle to manually align the overlay to the real world (today it auto-places, forces full opacity, and hides satellite entirely — needs rework)
 - 🔲 **Export layout as a re-importable overlay** — flatten the finished placement (equipment + cables, no base map) into a georeferenced image, usable as an overlay later (on this map or elsewhere), via the same import/alignment tool above
 - 🔲 Multiple plans / multiple levels per project — for multi-site jobs or multi-story venues

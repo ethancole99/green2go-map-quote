@@ -337,9 +337,20 @@ function equipScaleForRealMeters(gp, realMeters, mpp, baseWidthPx) {
   return Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, targetPx / baseWidthPx));
 }
 
+// Base map styles the user can switch between on the fly, mirroring
+// OnePlan's map-view switcher. "satellite-streets" (hybrid) stays the
+// default so existing behavior/sessions don't change.
+const MAP_STYLES = [
+  { id: "satellite", label: "Satellite", icon: "🛰️", url: "mapbox://styles/mapbox/satellite-v9" },
+  { id: "satellite-streets", label: "Hybrid", icon: "🗺️", url: "mapbox://styles/mapbox/satellite-streets-v12" },
+  { id: "streets", label: "Streets", icon: "🛣️", url: "mapbox://styles/mapbox/streets-v12" },
+];
+
 export default function App() {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
+  const ensureCableLayerRef = useRef(null);
+  const currentMapStyleRef = useRef(null); // style id actually live on the map instance
 
   // Equipment overlay + nodes
   const equipOverlayRef = useRef(null);
@@ -383,6 +394,13 @@ export default function App() {
   useEffect(() => {
     customMapModeRef.current = customMapMode;
   }, [customMapMode]);
+
+  // Which base map style is active (Satellite / Hybrid / Streets). Bumping
+  // styleVersion after a style swap forces the cable-rendering effect to
+  // re-run, since setStyle() wipes any custom sources/layers (cable
+  // GeoJSON line layer) that aren't part of the new style.
+  const [mapStyleId, setMapStyleId] = useState("satellite-streets");
+  const [styleVersion, setStyleVersion] = useState(0);
 
   // Manual equipment size adjustment (1 = 100%), on top of whatever the
   // real-scale/floor math computes. User-controlled via +/- buttons since
@@ -450,11 +468,12 @@ export default function App() {
 
     const m = new mapboxgl.Map({
       container: mapDivRef.current,
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
+      style: MAP_STYLES.find((s) => s.id === mapStyleId)?.url || MAP_STYLES[1].url,
       center: [-90.1994, 38.627],
       zoom: 14,
       preserveDrawingBuffer: true,
     });
+    currentMapStyleRef.current = mapStyleId;
 
     m.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
 
@@ -491,8 +510,11 @@ export default function App() {
       }
     };
 
-    m.on("load", () => {
-      // Cable source/layer
+    // (Re)creates the cable GeoJSON source/line-layer. Needed both on
+    // initial map load and after any setStyle() call, since swapping the
+    // base map style wipes out any sources/layers that aren't part of the
+    // new style's own spec.
+    const ensureCableLayer = () => {
       if (!m.getSource(cableSourceId)) {
         m.addSource(cableSourceId, {
           type: "geojson",
@@ -529,6 +551,11 @@ export default function App() {
           layout: { "line-cap": "round", "line-join": "round" },
         });
       }
+    };
+    ensureCableLayerRef.current = ensureCableLayer;
+
+    m.on("load", () => {
+      ensureCableLayer();
 
       // ✅ CRITICAL: attach overlays to map.getContainer(), NOT canvasContainer.
       // The canvasContainer is what Mapbox scales during scroll-zoom animation
@@ -594,9 +621,32 @@ export default function App() {
 
       m.off("render", updateAllOverlayScreenPositions);
 
+      ensureCableLayerRef.current = null;
       m.remove();
     };
   }, [showHomePage]);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Map style switcher (Satellite / Hybrid / Streets)
+  // ────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (currentMapStyleRef.current === mapStyleId) return;
+
+    const styleUrl = MAP_STYLES.find((s) => s.id === mapStyleId)?.url;
+    if (!styleUrl) return;
+
+    currentMapStyleRef.current = mapStyleId;
+    m.setStyle(styleUrl);
+    m.once("style.load", () => {
+      // setStyle() wipes any sources/layers not part of the new style, so
+      // the cable line layer needs to be rebuilt, and the cables effect
+      // needs to re-run to repopulate its GeoJSON data into the fresh source.
+      ensureCableLayerRef.current?.();
+      setStyleVersion((v) => v + 1);
+    });
+  }, [mapStyleId]);
 
   // ────────────────────────────────────────────────────────────────────────────
   // Catalog CSV load
@@ -1124,7 +1174,7 @@ export default function App() {
     }
 
     src.setData({ type: "FeatureCollection", features });
-  }, [cables, tool, cableDraftStart, cableDraftEnd, cableType]);
+  }, [cables, tool, cableDraftStart, cableDraftEnd, cableType, styleVersion]);
 
   const draftFeet = useMemo(() => {
     const m = mapRef.current;
@@ -1852,6 +1902,45 @@ export default function App() {
         </div>
         {searchErr ? <div style={{ marginTop: 6, fontSize: 12, color: "#b00020", fontWeight: 900 }}>{searchErr}</div> : null}
       </div>
+
+      {/* MAP VIEW SWITCHER */}
+      {!customMapMode && (
+        <div
+          data-ui-panel="true"
+          style={{
+            ...uiPanelStyle,
+            position: "absolute",
+            top: 100,
+            right: 12,
+            zIndex: 70,
+            padding: 6,
+            borderRadius: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          {MAP_STYLES.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setMapStyleId(s.id)}
+              title={s.label}
+              style={{
+                ...(mapStyleId === s.id ? baseBtn : lightBtn),
+                padding: "6px 10px",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                border: mapStyleId === s.id ? baseBtn.border : "1px solid transparent",
+              }}
+            >
+              <span>{s.icon}</span>
+              <span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* FILE MENU */}
       <div
