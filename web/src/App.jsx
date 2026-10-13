@@ -402,6 +402,26 @@ export default function App() {
   const [mapStyleId, setMapStyleId] = useState("satellite-streets");
   const [styleVersion, setStyleVersion] = useState(0);
 
+  // Top-left/top-right dropdown menus (File / Layers / Map) - only one open
+  // at a time, closed by clicking anywhere outside the open menu.
+  const [openMenu, setOpenMenu] = useState(null);
+  useEffect(() => {
+    if (!openMenu) return;
+    const onDocClick = (e) => {
+      if (!e.target.closest("[data-dropdown-root]")) setOpenMenu(null);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [openMenu]);
+
+  // Layer visibility - equipment, cable, and ramp runs can be shown/hidden
+  // and included/excluded from the BOM and exports independently.
+  const [layerVisible, setLayerVisible] = useState({ equipment: true, cable: true, ramp: true });
+  const layerVisibleRef = useRef(layerVisible);
+  useEffect(() => {
+    layerVisibleRef.current = layerVisible;
+  }, [layerVisible]);
+
   // Manual equipment size adjustment (1 = 100%), on top of whatever the
   // real-scale/floor math computes. User-controlled via +/- buttons since
   // no single hardcoded value reads right for everyone.
@@ -475,7 +495,8 @@ export default function App() {
     });
     currentMapStyleRef.current = mapStyleId;
 
-    m.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true }), "top-right");
+    // No native NavigationControl - zoom/compass are folded into the
+    // custom "Map" dropdown menu alongside the style switcher instead.
 
     const updateAllOverlayScreenPositions = () => {
       // Uploaded PDF/image maps are draped over made-up lng/lat bounds, not
@@ -814,6 +835,7 @@ export default function App() {
 
     overlay.appendChild(root);
     equipNodesRef.current.set(id, { el: root, shape, baseWidthPx, realMeters, it, lng, lat });
+    root.style.display = layerVisibleRef.current.equipment ? "" : "none";
 
     const p = m.project([lng, lat]);
     root.style.left = `${p.x}px`;
@@ -830,6 +852,13 @@ export default function App() {
       return [...prev, { id, ...it, lng, lat }];
     });
   }
+
+  // Keep already-placed equipment markers in sync with the Equipment layer toggle.
+  useEffect(() => {
+    for (const node of equipNodesRef.current.values()) {
+      node.el.style.display = layerVisible.equipment ? "" : "none";
+    }
+  }, [layerVisible.equipment, placed]);
 
   function addItem(it) {
     const m = mapRef.current;
@@ -1082,6 +1111,9 @@ export default function App() {
     };
 
     for (const c of cables) {
+      const isRamp = c.type === "RAMP";
+      if (isRamp ? !layerVisible.ramp : !layerVisible.cable) continue;
+
       const geometry =
         c.type === "RAMP"
           ? { type: "LineString", coordinates: rampRectangleRing(c.a, c.b, m, RAMP_WIDTH_FT / 2) }
@@ -1180,7 +1212,7 @@ export default function App() {
     }
 
     src.setData({ type: "FeatureCollection", features });
-  }, [cables, tool, cableDraftStart, cableDraftEnd, cableType, styleVersion]);
+  }, [cables, tool, cableDraftStart, cableDraftEnd, cableType, styleVersion, layerVisible.cable, layerVisible.ramp]);
 
   const draftFeet = useMemo(() => {
     const m = mapRef.current;
@@ -1195,6 +1227,7 @@ export default function App() {
   const equipmentBom = useMemo(() => {
     const qty = new Map();
     const sample = new Map();
+    if (!layerVisible.equipment) return [];
     for (const p of placed) {
       const k = `${p.gp}::${p.name}`;
       qty.set(k, (qty.get(k) || 0) + 1);
@@ -1209,7 +1242,7 @@ export default function App() {
     }
     rows.sort((a, b) => (a.gp + a.name).localeCompare(b.gp + b.name));
     return rows;
-  }, [placed, billingTerm]);
+  }, [placed, billingTerm, layerVisible.equipment]);
 
   const equipmentTotal = equipmentBom.reduce((s, r) => s + r.subtotal, 0);
 
@@ -1218,7 +1251,10 @@ export default function App() {
     const sample = new Map();
 
     for (const run of cables) {
-      if (run.type === "RAMP") {
+      const isRamp = run.type === "RAMP";
+      if (isRamp ? !layerVisible.ramp : !layerVisible.cable) continue;
+
+      if (isRamp) {
         const catalogItem = catalog.find((it) => it.gp === "Ramp") || null;
         const name = catalogItem ? catalogItem.name : "Cable Ramp (NO CATALOG MATCH)";
         const gp = "Ramp";
@@ -1270,13 +1306,13 @@ export default function App() {
     }
     rows.sort((a, b) => (a.gp + a.name).localeCompare(b.gp + b.name));
     return rows;
-  }, [cables, billingTerm, cableIndex, catalog]);
+  }, [cables, billingTerm, cableIndex, catalog, layerVisible.cable, layerVisible.ramp]);
 
   const cableTotal = cableBom.reduce((s, r) => s + r.subtotal, 0);
   const total = equipmentTotal + cableTotal;
   const totalCableFeet = useMemo(
-    () => cables.reduce((s, c) => (c.type === "RAMP" ? s : s + (c.feet || 0)), 0),
-    [cables]
+    () => (layerVisible.cable ? cables.reduce((s, c) => (c.type === "RAMP" ? s : s + (c.feet || 0)), 0) : 0),
+    [cables, layerVisible.cable]
   );
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -1363,12 +1399,15 @@ export default function App() {
     const rows = [header];
 
     for (const p of placed) {
+      if (!layerVisible.equipment) continue;
       rows.push(["Equipment", p.gp || "", p.name || "", "", p.lat, p.lng, "", ""]);
     }
 
     for (const c of cables) {
-      const kind = c.type === "RAMP" ? "Ramp" : "Cable";
-      const name = c.type === "RAMP" ? `${rampUnitsFor(c.feet)}x ramps` : `${c.feet.toFixed(1)}ft`;
+      const isRamp = c.type === "RAMP";
+      if (isRamp ? !layerVisible.ramp : !layerVisible.cable) continue;
+      const kind = isRamp ? "Ramp" : "Cable";
+      const name = isRamp ? `${rampUnitsFor(c.feet)}x ramps` : `${c.feet.toFixed(1)}ft`;
       rows.push([kind, c.type, name, c.feet.toFixed(1), c.a.lat, c.a.lng, c.b.lat, c.b.lng]);
     }
 
@@ -1943,120 +1982,219 @@ export default function App() {
         {searchErr ? <div style={{ marginTop: 6, fontSize: 12, color: "#b00020", fontWeight: 900 }}>{searchErr}</div> : null}
       </div>
 
-      {/* MAP VIEW SWITCHER */}
+      {/* MAP MENU (dropdown: zoom, compass, style switcher) */}
       {!customMapMode && (
-        <div
-          data-ui-panel="true"
-          style={{
-            ...uiPanelStyle,
-            position: "absolute",
-            top: 100,
-            right: 12,
-            zIndex: 70,
-            padding: 6,
-            borderRadius: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-          }}
-        >
-          {MAP_STYLES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setMapStyleId(s.id)}
-              title={s.label}
+        <div data-ui-panel="true" data-dropdown-root="true" style={{ position: "absolute", top: 12, right: 12, zIndex: 70 }}>
+          <button
+            onClick={() => setOpenMenu((v) => (v === "map" ? null : "map"))}
+            style={{ ...baseBtn, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            🗺️ Map {openMenu === "map" ? "▴" : "▾"}
+          </button>
+          {openMenu === "map" && (
+            <div
               style={{
-                ...(mapStyleId === s.id ? baseBtn : lightBtn),
-                padding: "6px 10px",
-                fontSize: 12,
+                ...uiPanelStyle,
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                right: 0,
+                padding: 8,
+                borderRadius: 12,
                 display: "flex",
-                alignItems: "center",
+                flexDirection: "column",
                 gap: 6,
-                border: mapStyleId === s.id ? baseBtn.border : "1px solid transparent",
+                minWidth: 190,
               }}
             >
-              <span>{s.icon}</span>
-              <span>{s.label}</span>
-            </button>
-          ))}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => mapRef.current?.zoomIn()} title="Zoom in" style={{ ...lightBtn, flex: 1, padding: "8px 0", fontSize: 16 }}>
+                  +
+                </button>
+                <button onClick={() => mapRef.current?.zoomOut()} title="Zoom out" style={{ ...lightBtn, flex: 1, padding: "8px 0", fontSize: 16 }}>
+                  −
+                </button>
+                <button onClick={() => mapRef.current?.resetNorth()} title="Reset north" style={{ ...lightBtn, flex: 1, padding: "8px 0", fontSize: 14 }}>
+                  🧭
+                </button>
+              </div>
+              <div style={{ height: 1, background: "rgba(0,0,0,0.12)", margin: "2px 0" }} />
+              {MAP_STYLES.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setMapStyleId(s.id)}
+                  style={{
+                    ...(mapStyleId === s.id ? baseBtn : lightBtn),
+                    padding: "8px 10px",
+                    fontSize: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    textAlign: "left",
+                    border: mapStyleId === s.id ? baseBtn.border : "1px solid transparent",
+                  }}
+                >
+                  <span>{s.icon}</span>
+                  <span>{s.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* FILE MENU */}
-      <div
-        data-ui-panel="true"
-        style={{
-          ...uiPanelStyle,
-          position: "absolute",
-          top: 12,
-          left: 12,
-          zIndex: 70,
-          padding: "8px 12px",
-          borderRadius: 12,
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 900 }}>File:</div>
-
-        <button onClick={saveProject} style={{ ...lightBtn, padding: "6px 10px", fontSize: 12 }}>
-          💾 Save
-        </button>
-
-        <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "6px 10px", fontSize: 12 }}>
-          📂 Load
-          <input
-            type="file"
-            accept=".json"
-            onChange={(e) => {
-              if (e.target.files[0]) {
-                loadProject(e.target.files[0]);
-                e.target.value = "";
-              }
-            }}
-            style={{ display: "none" }}
-          />
-        </label>
-
-        {customMapImage ? (
+      {/* FILE + LAYERS MENUS */}
+      <div style={{ position: "absolute", top: 12, left: 12, zIndex: 70, display: "flex", gap: 8 }}>
+        {/* FILE */}
+        <div data-ui-panel="true" data-dropdown-root="true" style={{ position: "relative" }}>
           <button
-            onClick={removeCustomMap}
-            style={{
-              ...lightBtn,
-              padding: "6px 10px",
-              fontSize: 12,
-              background: "#ffebee",
-              color: "#d32f2f",
-              border: "1px solid #d32f2f",
-            }}
+            onClick={() => setOpenMenu((v) => (v === "file" ? null : "file"))}
+            style={{ ...baseBtn, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
           >
-            🗑️ Remove Map
+            📁 File {openMenu === "file" ? "▴" : "▾"}
           </button>
-        ) : (
-          <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "6px 10px", fontSize: 12 }}>
-            🗺️ Upload Map
-            <input
-              type="file"
-              accept="image/*,.pdf"
-              onChange={(e) => {
-                if (e.target.files[0]) {
-                  handleCustomMapUpload(e.target.files[0], false);
-                  e.target.value = "";
-                }
+          {openMenu === "file" && (
+            <div
+              style={{
+                ...uiPanelStyle,
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                padding: 8,
+                borderRadius: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                minWidth: 190,
               }}
-              style={{ display: "none" }}
-            />
-          </label>
-        )}
+            >
+              <button
+                onClick={() => {
+                  saveProject();
+                  setOpenMenu(null);
+                }}
+                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, textAlign: "left" }}
+              >
+                💾 Save
+              </button>
 
-        <button onClick={exportPDF} style={{ ...lightBtn, padding: "6px 10px", fontSize: 12 }}>
-          📄 Export PDF
-        </button>
+              <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "8px 10px", fontSize: 12 }}>
+                📂 Load
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => {
+                    if (e.target.files[0]) {
+                      loadProject(e.target.files[0]);
+                      e.target.value = "";
+                    }
+                    setOpenMenu(null);
+                  }}
+                  style={{ display: "none" }}
+                />
+              </label>
 
-        <button onClick={exportObjectsCSV} style={{ ...lightBtn, padding: "6px 10px", fontSize: 12 }}>
-          📊 Export CSV
-        </button>
+              {customMapImage ? (
+                <button
+                  onClick={() => {
+                    removeCustomMap();
+                    setOpenMenu(null);
+                  }}
+                  style={{
+                    ...lightBtn,
+                    padding: "8px 10px",
+                    fontSize: 12,
+                    textAlign: "left",
+                    background: "#ffebee",
+                    color: "#d32f2f",
+                    border: "1px solid #d32f2f",
+                  }}
+                >
+                  🗑️ Remove Map
+                </button>
+              ) : (
+                <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "8px 10px", fontSize: 12 }}>
+                  🗺️ Upload Map
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => {
+                      if (e.target.files[0]) {
+                        handleCustomMapUpload(e.target.files[0], false);
+                        e.target.value = "";
+                      }
+                      setOpenMenu(null);
+                    }}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              )}
+
+              <button
+                onClick={() => {
+                  exportPDF();
+                  setOpenMenu(null);
+                }}
+                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, textAlign: "left" }}
+              >
+                📄 Export PDF
+              </button>
+
+              <button
+                onClick={() => {
+                  exportObjectsCSV();
+                  setOpenMenu(null);
+                }}
+                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, textAlign: "left" }}
+              >
+                📊 Export CSV
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* LAYERS */}
+        <div data-ui-panel="true" data-dropdown-root="true" style={{ position: "relative" }}>
+          <button
+            onClick={() => setOpenMenu((v) => (v === "layers" ? null : "layers"))}
+            style={{ ...baseBtn, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            🧩 Layers {openMenu === "layers" ? "▴" : "▾"}
+          </button>
+          {openMenu === "layers" && (
+            <div
+              style={{
+                ...uiPanelStyle,
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                padding: 10,
+                borderRadius: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                minWidth: 220,
+              }}
+            >
+              {[
+                { key: "equipment", label: "Equipment (Gens/AC/Distro)" },
+                { key: "cable", label: "Cable" },
+                { key: "ramp", label: "Cable Ramp" },
+              ].map((layer) => (
+                <label key={layer.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={layerVisible[layer.key]}
+                    onChange={(e) => setLayerVisible((prev) => ({ ...prev, [layer.key]: e.target.checked }))}
+                  />
+                  {layer.label}
+                </label>
+              ))}
+              <div style={{ fontSize: 10, opacity: 0.65, fontWeight: 700, marginTop: 2 }}>
+                Hidden layers are left out of the map, BOM, and exports.
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* BOTTOM LEFT CONTROLS */}
@@ -2317,9 +2455,10 @@ export default function App() {
             </div>
 
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8, marginBottom: 10, fontWeight: 900 }}>
-              Equipment placed: {placed.length} • Cable runs: {cables.filter((c) => c.type !== "RAMP").length} • Ramps:{" "}
-              {cables.filter((c) => c.type === "RAMP").reduce((s, c) => s + rampUnitsFor(c.feet), 0)} • Cable drawn:{" "}
-              {totalCableFeet.toFixed(1)} ft
+              Equipment placed: {layerVisible.equipment ? placed.length : 0} • Cable runs:{" "}
+              {layerVisible.cable ? cables.filter((c) => c.type !== "RAMP").length : 0} • Ramps:{" "}
+              {layerVisible.ramp ? cables.filter((c) => c.type === "RAMP").reduce((s, c) => s + rampUnitsFor(c.feet), 0) : 0} • Cable
+              drawn: {totalCableFeet.toFixed(1)} ft
             </div>
 
             <div style={{ padding: 10, borderRadius: 10, background: "#fff", border: "1px solid rgba(0,0,0,0.12)" }}>
