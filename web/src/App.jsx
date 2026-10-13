@@ -1344,6 +1344,40 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
+  // Raw per-object data export (every placed item with its own row and
+  // coordinates), separate from the aggregated priced BOM used in the PDF -
+  // this is for pulling the plan's data into a spreadsheet or another tool.
+  function exportObjectsCSV() {
+    const csvEscape = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const header = ["Kind", "Group", "Name", "Feet", "Lat", "Lng", "EndLat", "EndLng"];
+    const rows = [header];
+
+    for (const p of placed) {
+      rows.push(["Equipment", p.gp || "", p.name || "", "", p.lat, p.lng, "", ""]);
+    }
+
+    for (const c of cables) {
+      const kind = c.type === "RAMP" ? "Ramp" : "Cable";
+      const name = c.type === "RAMP" ? `${rampUnitsFor(c.feet)}x ramps` : `${c.feet.toFixed(1)}ft`;
+      rows.push([kind, c.type, name, c.feet.toFixed(1), c.a.lat, c.a.lng, c.b.lat, c.b.lng]);
+    }
+
+    const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `green2go-objects-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   function loadProject(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -2012,6 +2046,10 @@ export default function App() {
 
         <button onClick={exportPDF} style={{ ...lightBtn, padding: "6px 10px", fontSize: 12 }}>
           📄 Export PDF
+        </button>
+
+        <button onClick={exportObjectsCSV} style={{ ...lightBtn, padding: "6px 10px", fontSize: 12 }}>
+          📊 Export CSV
         </button>
       </div>
 

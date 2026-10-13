@@ -44,7 +44,7 @@ Grouped by area. ✅ built · 🔲 not built yet. This is the complete list — 
 ### Pricing & output
 - ✅ Priced Bill of Materials from real catalog data (day/week/month)
 - ✅ PDF export (site plan + priced quote)
-- 🔲 CSV export of placed objects
+- ✅ CSV export of placed objects
 - 🔲 Permit-ready / clean export format (may just be a styling pass on the existing PDF export)
 - 🔲 Share-by-link for stakeholders/crew (not just PDF) — ties to the overlay export above: a link could serve the georeferenced overlay for live viewing
 
