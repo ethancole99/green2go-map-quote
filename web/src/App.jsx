@@ -337,6 +337,21 @@ function equipScaleForRealMeters(gp, realMeters, mpp, baseWidthPx) {
   return Math.min(EQUIP_MAX_SCALE, Math.max(EQUIP_MIN_SCALE, targetPx / baseWidthPx));
 }
 
+// Dark professional/utility theme - shared across the homescreen and
+// (progressively) the rest of the app's chrome, so the look stays
+// consistent as more of the UI gets redesigned.
+const THEME = {
+  bg: "#0b0e14",
+  bgGradient: "radial-gradient(circle at 20% 15%, #161d29 0%, #0b0e14 65%)",
+  panel: "#161b24",
+  panelBorder: "rgba(255,255,255,0.08)",
+  text: "#e8eaed",
+  textMuted: "#8b94a3",
+  accent: "#00c853",
+  accentText: "#06150a",
+  danger: "#ff5252",
+};
+
 // Base map styles the user can switch between on the fly, mirroring
 // OnePlan's map-view switcher. "satellite-streets" (hybrid) stays the
 // default so existing behavior/sessions don't change.
@@ -1788,12 +1803,33 @@ export default function App() {
   // Home page
   // ────────────────────────────────────────────────────────────────────────────
   if (showHomePage) {
+    const homeBtnBase = {
+      width: "100%",
+      padding: "16px 20px",
+      fontSize: 15,
+      fontWeight: 800,
+      borderRadius: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      justifyContent: "center",
+      cursor: "pointer",
+      margin: 0,
+      letterSpacing: 0.2,
+    };
+    const homeBtnSecondary = {
+      ...homeBtnBase,
+      background: "transparent",
+      border: "1px solid rgba(255,255,255,0.14)",
+      color: THEME.text,
+    };
+
     return (
       <div
         style={{
           width: "100vw",
           height: "100vh",
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          background: THEME.bgGradient,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1802,70 +1838,44 @@ export default function App() {
       >
         <div
           style={{
-            background: "rgba(255,255,255,0.98)",
-            borderRadius: 24,
-            padding: "48px 64px",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-            maxWidth: 600,
+            background: THEME.panel,
+            border: `1px solid ${THEME.panelBorder}`,
+            borderRadius: 16,
+            padding: "48px 56px",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.55)",
+            maxWidth: 560,
             width: "90%",
           }}
         >
-          <h1
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: 26 }}>⚡</span>
+            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: THEME.text, letterSpacing: -0.5 }}>Green2Go</h1>
+          </div>
+          <p
             style={{
-              margin: "0 0 12px 0",
-              fontSize: 48,
-              fontWeight: 900,
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
+              margin: "0 0 36px 0",
+              fontSize: 13,
+              color: THEME.textMuted,
               textAlign: "center",
+              fontWeight: 700,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
             }}
           >
-            Green2Go
-          </h1>
-          <p style={{ margin: "0 0 40px 0", fontSize: 18, color: "#666", textAlign: "center", fontWeight: 500 }}>
-            Event Equipment Planner
+            Event Power Planner
           </p>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button
               onClick={() => setShowHomePage(false)}
-              style={{
-                ...baseBtn,
-                width: "100%",
-                padding: "20px 24px",
-                fontSize: 18,
-                fontWeight: 900,
-                background: "linear-gradient(135deg, #00c853 0%, #00e676 100%)",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                justifyContent: "center",
-              }}
+              style={{ ...homeBtnBase, background: THEME.accent, color: THEME.accentText, border: "none" }}
             >
-              <span style={{ fontSize: 24 }}>🛰️</span>
+              <span style={{ fontSize: 20 }}>🛰️</span>
               <span>Start with Satellite Map</span>
             </button>
 
-            <label
-              style={{
-                ...baseBtn,
-                width: "100%",
-                padding: "20px 24px",
-                fontSize: 18,
-                fontWeight: 900,
-                background: "linear-gradient(135deg, #2196f3 0%, #42a5f5 100%)",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                justifyContent: "center",
-                cursor: "pointer",
-                margin: 0,
-              }}
-            >
-              <span style={{ fontSize: 24 }}>🗺️</span>
+            <label style={homeBtnSecondary}>
+              <span style={{ fontSize: 20 }}>🗺️</span>
               <span>Upload Custom Map (PDF/Image)</span>
               <input
                 type="file"
@@ -1882,24 +1892,8 @@ export default function App() {
               />
             </label>
 
-            <label
-              style={{
-                ...baseBtn,
-                width: "100%",
-                padding: "20px 24px",
-                fontSize: 18,
-                fontWeight: 900,
-                background: "linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                justifyContent: "center",
-                cursor: "pointer",
-                margin: 0,
-              }}
-            >
-              <span style={{ fontSize: 24 }}>📂</span>
+            <label style={homeBtnSecondary}>
+              <span style={{ fontSize: 20 }}>📂</span>
               <span>Load Existing Project</span>
               <input
                 type="file"
@@ -1916,8 +1910,8 @@ export default function App() {
             </label>
           </div>
 
-          <p style={{ marginTop: 32, fontSize: 13, color: "#999", textAlign: "center", fontWeight: 500 }}>
-            Plan event layouts • Generate quotes • Export PDFs
+          <p style={{ marginTop: 28, fontSize: 12, color: THEME.textMuted, textAlign: "center", fontWeight: 600 }}>
+            Plan layouts · Generate quotes · Export PDFs
           </p>
         </div>
       </div>
