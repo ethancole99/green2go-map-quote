@@ -214,6 +214,79 @@ function extractSize(name, type) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Electrical connection topology - which cable type can connect which
+// equipment types. This is the real plug-and-play chain this business
+// actually uses, given directly by the business owner, not guessed.
+//
+// T-adapters mean any camlock or 50A connection point can always be split
+// further in reality, so this validates connection TYPE compatibility
+// (what can plug into what), not how many cables can originate from one
+// point - port counts aren't modeled or capped.
+// ──────────────────────────────────────────────────────────────────────────────
+function equipRole(gp, name) {
+  const n = norm(name);
+  if (gp === "Gens") return "GENERATOR";
+  if (gp === "AC") return "AC";
+  if (gp === "Distro") {
+    if (n.includes("quad")) return "QUAD_PANEL";
+    if (n.includes("50 panel")) return "FIFTY_PANEL";
+    if (n.includes("rv")) return "RV_PANEL";
+    if (n.includes("spider")) return "SPIDERBOX";
+  }
+  return null;
+}
+
+const DISTRO_ROLES = ["QUAD_PANEL", "FIFTY_PANEL", "RV_PANEL"];
+
+// 200A Quad/50 panels and the RV Panel have a camlock passthrough that lets
+// another distro daisy-chain off them; 100A panels don't.
+function equipHasCamlockPassthrough(gp, name) {
+  if (gp !== "Distro") return false;
+  const n = norm(name);
+  if (n.includes("rv")) return true;
+  return n.includes("200a");
+}
+
+// Can a cable of this type legally START at equipment with this role?
+// (Validated at the start click, before the far end is known.)
+function canCableStartFrom(type, fromRole, fromName) {
+  if (type === "BANDED" || type === "FOUR_O") {
+    return fromRole === "GENERATOR" || (DISTRO_ROLES.includes(fromRole) && equipHasCamlockPassthrough("Distro", fromName));
+  }
+  if (type === "50A") {
+    return fromRole === "GENERATOR" || fromRole === "FIFTY_PANEL" || fromRole === "SPIDERBOX";
+  }
+  if (type === "QUAD" || type === "30A") {
+    // Quad Stringer and 30A Extension both only ever originate at a Quad
+    // Panel - their far end is terminal (outlets / whatever plugs in), not
+    // modeled as its own connectable node.
+    return fromRole === "QUAD_PANEL";
+  }
+  return true;
+}
+
+// Can a cable of this type legally END at equipment with this role? (Only
+// meaningful for types whose far end is required to land on equipment -
+// see cableEndpointRules below.)
+function canCableEndAt(type, toRole) {
+  if (type === "BANDED" || type === "FOUR_O") return DISTRO_ROLES.includes(toRole) || toRole === "AC";
+  if (type === "50A") return toRole === "SPIDERBOX";
+  return true;
+}
+
+// Which cable types require their start/end to land on real equipment, and
+// which ends are free/terminal by nature of the real topology.
+function cableEndpointRules(type) {
+  if (type === "BANDED" || type === "FOUR_O" || type === "50A") {
+    return { requiresFromSnap: true, requiresToSnap: true };
+  }
+  if (type === "QUAD" || type === "30A") {
+    return { requiresFromSnap: true, requiresToSnap: false };
+  }
+  return { requiresFromSnap: false, requiresToSnap: false };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Equipment marker creation (NOT Mapbox Marker)
 // These are rendered into an absolute overlay that is attached to map.getContainer()
 // so it does NOT inherit Mapbox canvas smooth-zoom transform scaling.
@@ -384,11 +457,16 @@ const MAP_STYLES = [
   { id: "streets", label: "Streets", Icon: Road, url: "mapbox://styles/mapbox/streets-v12" },
 ];
 
+const CABLE_TYPE_LABELS = { "50A": "50A", "30A": "30A", BANDED: "Banded/2-0", FOUR_O: "4/0", QUAD: "Quad Stringer", RAMP: "Cable Ramp" };
+
 export default function App() {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
   const ensureCableLayerRef = useRef(null);
   const currentMapStyleRef = useRef(null); // style id actually live on the map instance
+  // Equipment id a cable draft is connected to at its start (set on the
+  // start click, consumed when the draft is completed or cancelled).
+  const cableFromIdRef = useRef(null);
 
   // Equipment overlay + nodes
   const equipOverlayRef = useRef(null);
@@ -830,6 +908,9 @@ export default function App() {
         equipNodesRef.current.delete(rid);
       }
       setPlaced((prev) => prev.filter((x) => x.id !== rid));
+      // Cables connected to this equipment no longer have anywhere to plug
+      // in - a dangling connection doesn't mean anything, so they go too.
+      setCables((prev) => prev.filter((c) => c.fromId !== rid && c.toId !== rid));
     };
 
     del.onclick = (e) => {
@@ -857,6 +938,23 @@ export default function App() {
       node.lat = ll.lat;
 
       setPlaced((prev) => prev.map((p) => (p.id === id ? { ...p, lng: ll.lng, lat: ll.lat } : p)));
+
+      // Cables physically snapped to this equipment (Banded/4-0/50A/30A)
+      // follow it when it moves. Quad Stringers record which Quad Panel
+      // feeds them (fromId) purely as an association - their own a/b span
+      // is independently placed, not anchored to the panel's position.
+      setCables((prev) =>
+        prev.map((c) => {
+          if (c.type === "QUAD") return c;
+          if (c.fromId !== id && c.toId !== id) return c;
+          const newA = c.fromId === id ? { lng: ll.lng, lat: ll.lat } : c.a;
+          const newB = c.toId === id ? { lng: ll.lng, lat: ll.lat } : c.b;
+          const newFeet = customMapModeRef.current
+            ? customMapDistance(newA, newB, m)
+            : mToFt(haversineMeters(newA, newB));
+          return { ...c, a: newA, b: newB, feet: newFeet };
+        })
+      );
 
       const pt = m.project([ll.lng, ll.lat]);
       root.style.left = `${pt.x}px`;
@@ -943,6 +1041,43 @@ export default function App() {
     const m = mapRef.current;
     if (!m) return;
 
+    const SNAP_PX = 40;
+
+    // Nearest placed equipment to a click point, within snap range.
+    function findNearbyEquipment(point) {
+      let best = null;
+      let bestDist = Infinity;
+      const pp = m.project([point.lng, point.lat]);
+      for (const [nodeId, node] of equipNodesRef.current.entries()) {
+        const np = m.project([node.lng, node.lat]);
+        const dist = Math.hypot(np.x - pp.x, np.y - pp.y);
+        if (dist < SNAP_PX && dist < bestDist) {
+          bestDist = dist;
+          best = { id: nodeId, lng: node.lng, lat: node.lat, gp: node.it?.gp, name: node.it?.name };
+        }
+      }
+      return best;
+    }
+
+    // Nearest placed Quad Panel to a point, regardless of distance - Quad
+    // Stringers/30A Extensions can run any real-world length from the
+    // panel that feeds them, so this isn't limited to snap range.
+    function findNearestQuadPanel(point) {
+      let best = null;
+      let bestDist = Infinity;
+      const pp = m.project([point.lng, point.lat]);
+      for (const [nodeId, node] of equipNodesRef.current.entries()) {
+        if (equipRole(node.it?.gp, node.it?.name) !== "QUAD_PANEL") continue;
+        const np = m.project([node.lng, node.lat]);
+        const dist = Math.hypot(np.x - pp.x, np.y - pp.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { id: nodeId, gp: node.it?.gp, name: node.it?.name };
+        }
+      }
+      return best;
+    }
+
     function onMouseMove(e) {
       if (tool !== "cable") return;
       if (cableType === "QUAD") return;
@@ -954,8 +1089,15 @@ export default function App() {
       if (tool !== "cable") return;
 
       const p = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      const label = CABLE_TYPE_LABELS[cableType] || cableType;
 
       if (cableType === "QUAD") {
+        const quadPanel = findNearestQuadPanel(p);
+        if (!quadPanel) {
+          alert("Place a Quad Panel first - a Quad Stringer has to be fed from one.");
+          return;
+        }
+
         const id = crypto.randomUUID();
 
         let a, b;
@@ -974,21 +1116,66 @@ export default function App() {
           b = { lng: p.lng + offsetLng / 2, lat: p.lat };
         }
 
-        setCables((prev) => [...prev, { id, type: cableType, a, b, feet: 50, rotation: 0 }]);
+        setCables((prev) => [...prev, { id, type: cableType, a, b, feet: 50, rotation: 0, fromId: quadPanel.id, toId: null }]);
         return;
       }
 
+      const rules = cableEndpointRules(cableType);
+
       if (!cableDraftStart) {
-        setCableDraftStart(p);
-        setCableDraftEnd(p);
+        if (!rules.requiresFromSnap) {
+          cableFromIdRef.current = null;
+          setCableDraftStart(p);
+          setCableDraftEnd(p);
+          return;
+        }
+
+        const near = findNearbyEquipment(p);
+        if (!near) {
+          alert(`Click directly on the equipment this ${label} cable starts from.`);
+          return;
+        }
+        const fromRole = equipRole(near.gp, near.name);
+        if (!canCableStartFrom(cableType, fromRole, near.name)) {
+          alert(`A ${label} cable can't start from ${near.name}.`);
+          return;
+        }
+
+        cableFromIdRef.current = near.id;
+        setCableDraftStart({ lng: near.lng, lat: near.lat });
+        setCableDraftEnd({ lng: near.lng, lat: near.lat });
         return;
       }
 
       const a = cableDraftStart;
-      const b = p;
+      let b = p;
+      let toId = null;
+
+      if (rules.requiresToSnap) {
+        const near = findNearbyEquipment(p);
+        if (!near) {
+          alert(`Click directly on the equipment this ${label} cable ends at.`);
+          cableFromIdRef.current = null;
+          setCableDraftStart(null);
+          setCableDraftEnd(null);
+          return;
+        }
+        const toRole = equipRole(near.gp, near.name);
+        if (!canCableEndAt(cableType, toRole)) {
+          alert(`A ${label} cable can't end at ${near.name}.`);
+          cableFromIdRef.current = null;
+          setCableDraftStart(null);
+          setCableDraftEnd(null);
+          return;
+        }
+        b = { lng: near.lng, lat: near.lat };
+        toId = near.id;
+      }
+
       const feet = customMapMode ? customMapDistance(a, b, m) : mToFt(haversineMeters(a, b));
       const id = crypto.randomUUID();
-      setCables((prev) => [...prev, { id, type: cableType, a, b, feet }]);
+      setCables((prev) => [...prev, { id, type: cableType, a, b, feet, fromId: cableFromIdRef.current, toId }]);
+      cableFromIdRef.current = null;
       setCableDraftStart(null);
       setCableDraftEnd(null);
     }
@@ -1021,6 +1208,7 @@ export default function App() {
   }, [tool, cableType, cableDraftStart, customMapMode]);
 
   function clearCableDraft() {
+    cableFromIdRef.current = null;
     setCableDraftStart(null);
     setCableDraftEnd(null);
   }
