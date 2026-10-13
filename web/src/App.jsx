@@ -6,6 +6,21 @@ import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import html2canvas from "html2canvas";
 import * as pdfjsLib from "pdfjs-dist";
+import {
+  Zap,
+  Satellite,
+  Map as MapIcon,
+  Road,
+  FolderOpen,
+  Compass,
+  Folder,
+  Save,
+  Trash2,
+  FileText,
+  FileSpreadsheet,
+  Layers as LayersIcon,
+  Lightbulb,
+} from "lucide-react";
 
 // pdfjs worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
@@ -356,9 +371,9 @@ const THEME = {
 // OnePlan's map-view switcher. "satellite-streets" (hybrid) stays the
 // default so existing behavior/sessions don't change.
 const MAP_STYLES = [
-  { id: "satellite", label: "Satellite", icon: "🛰️", url: "mapbox://styles/mapbox/satellite-v9" },
-  { id: "satellite-streets", label: "Hybrid", icon: "🗺️", url: "mapbox://styles/mapbox/satellite-streets-v12" },
-  { id: "streets", label: "Streets", icon: "🛣️", url: "mapbox://styles/mapbox/streets-v12" },
+  { id: "satellite", label: "Satellite", Icon: Satellite, url: "mapbox://styles/mapbox/satellite-v9" },
+  { id: "satellite-streets", label: "Hybrid", Icon: MapIcon, url: "mapbox://styles/mapbox/satellite-streets-v12" },
+  { id: "streets", label: "Streets", Icon: Road, url: "mapbox://styles/mapbox/streets-v12" },
 ];
 
 export default function App() {
@@ -593,7 +608,7 @@ export default function App() {
     m.on("load", () => {
       ensureCableLayer();
 
-      // ✅ CRITICAL: attach overlays to map.getContainer(), NOT canvasContainer.
+      // CRITICAL: attach overlays to map.getContainer(), NOT canvasContainer.
       // The canvasContainer is what Mapbox scales during scroll-zoom animation
       // (that's the "markers grow/shrink while zooming" bug) — mapboxgl.Marker
       // elements live inside that scaled container, so both equipment AND cable
@@ -1848,7 +1863,7 @@ export default function App() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 26 }}>⚡</span>
+            <Zap size={26} color={THEME.accent} fill={THEME.accent} />
             <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: THEME.text, letterSpacing: -0.5 }}>Green2Go</h1>
           </div>
           <p
@@ -1870,12 +1885,12 @@ export default function App() {
               onClick={() => setShowHomePage(false)}
               style={{ ...homeBtnBase, background: THEME.accent, color: THEME.accentText, border: "none" }}
             >
-              <span style={{ fontSize: 20 }}>🛰️</span>
+              <Satellite size={20} />
               <span>Start with Satellite Map</span>
             </button>
 
             <label style={homeBtnSecondary}>
-              <span style={{ fontSize: 20 }}>🗺️</span>
+              <MapIcon size={20} />
               <span>Upload Custom Map (PDF/Image)</span>
               <input
                 type="file"
@@ -1893,7 +1908,7 @@ export default function App() {
             </label>
 
             <label style={homeBtnSecondary}>
-              <span style={{ fontSize: 20 }}>📂</span>
+              <FolderOpen size={20} />
               <span>Load Existing Project</span>
               <input
                 type="file"
@@ -1983,7 +1998,7 @@ export default function App() {
             onClick={() => setOpenMenu((v) => (v === "map" ? null : "map"))}
             style={{ ...baseBtn, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
           >
-            🗺️ Map {openMenu === "map" ? "▴" : "▾"}
+            <MapIcon size={14} /> Map {openMenu === "map" ? "▴" : "▾"}
           </button>
           {openMenu === "map" && (
             <div
@@ -2007,8 +2022,12 @@ export default function App() {
                 <button onClick={() => mapRef.current?.zoomOut()} title="Zoom out" style={{ ...lightBtn, flex: 1, padding: "8px 0", fontSize: 16 }}>
                   −
                 </button>
-                <button onClick={() => mapRef.current?.resetNorth()} title="Reset north" style={{ ...lightBtn, flex: 1, padding: "8px 0", fontSize: 14 }}>
-                  🧭
+                <button
+                  onClick={() => mapRef.current?.resetNorth()}
+                  title="Reset north"
+                  style={{ ...lightBtn, flex: 1, padding: "8px 0", display: "flex", alignItems: "center", justifyContent: "center" }}
+                >
+                  <Compass size={16} />
                 </button>
               </div>
               <div style={{ height: 1, background: "rgba(0,0,0,0.12)", margin: "2px 0" }} />
@@ -2027,7 +2046,7 @@ export default function App() {
                     border: mapStyleId === s.id ? baseBtn.border : "1px solid transparent",
                   }}
                 >
-                  <span>{s.icon}</span>
+                  <s.Icon size={14} />
                   <span>{s.label}</span>
                 </button>
               ))}
@@ -2044,7 +2063,7 @@ export default function App() {
             onClick={() => setOpenMenu((v) => (v === "file" ? null : "file"))}
             style={{ ...baseBtn, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
           >
-            📁 File {openMenu === "file" ? "▴" : "▾"}
+            <Folder size={14} /> File {openMenu === "file" ? "▴" : "▾"}
           </button>
           {openMenu === "file" && (
             <div
@@ -2066,13 +2085,13 @@ export default function App() {
                   saveProject();
                   setOpenMenu(null);
                 }}
-                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, textAlign: "left" }}
+                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
               >
-                💾 Save
+                <Save size={14} /> Save
               </button>
 
-              <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "8px 10px", fontSize: 12 }}>
-                📂 Load
+              <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "8px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <FolderOpen size={14} /> Load
                 <input
                   type="file"
                   accept=".json"
@@ -2097,17 +2116,21 @@ export default function App() {
                     ...lightBtn,
                     padding: "8px 10px",
                     fontSize: 12,
-                    textAlign: "left",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
                     background: "#ffebee",
                     color: "#d32f2f",
                     border: "1px solid #d32f2f",
                   }}
                 >
-                  🗑️ Remove Map
+                  <Trash2 size={14} /> Remove Map
                 </button>
               ) : (
-                <label style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "8px 10px", fontSize: 12 }}>
-                  🗺️ Upload Map
+                <label
+                  style={{ ...lightBtn, margin: 0, cursor: "pointer", padding: "8px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <MapIcon size={14} /> Upload Map
                   <input
                     type="file"
                     accept="image/*,.pdf"
@@ -2128,9 +2151,9 @@ export default function App() {
                   exportPDF();
                   setOpenMenu(null);
                 }}
-                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, textAlign: "left" }}
+                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
               >
-                📄 Export PDF
+                <FileText size={14} /> Export PDF
               </button>
 
               <button
@@ -2138,9 +2161,9 @@ export default function App() {
                   exportObjectsCSV();
                   setOpenMenu(null);
                 }}
-                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, textAlign: "left" }}
+                style={{ ...lightBtn, padding: "8px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
               >
-                📊 Export CSV
+                <FileSpreadsheet size={14} /> Export CSV
               </button>
             </div>
           )}
@@ -2152,7 +2175,7 @@ export default function App() {
             onClick={() => setOpenMenu((v) => (v === "layers" ? null : "layers"))}
             style={{ ...baseBtn, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
           >
-            🧩 Layers {openMenu === "layers" ? "▴" : "▾"}
+            <LayersIcon size={14} /> Layers {openMenu === "layers" ? "▴" : "▾"}
           </button>
           {openMenu === "layers" && (
             <div
@@ -2266,8 +2289,20 @@ export default function App() {
           </select>
         </div>
 
-        <div style={{ ...uiPanelStyle, padding: "6px 10px", borderRadius: 12, fontSize: 11, fontWeight: 900, opacity: 0.85 }}>
-          💡 Shift+Drag to move equipment | Ctrl+Shift+Right Click cable to delete
+        <div
+          style={{
+            ...uiPanelStyle,
+            padding: "6px 10px",
+            borderRadius: 12,
+            fontSize: 11,
+            fontWeight: 900,
+            opacity: 0.85,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <Lightbulb size={13} /> Shift+Drag to move equipment | Ctrl+Shift+Right Click cable to delete
         </div>
       </div>
 
